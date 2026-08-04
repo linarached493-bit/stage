@@ -1,3 +1,5 @@
 # Feature : Authentification
 
-Écrans de connexion et de gestion de session, consommant la ressource `Authentification` de l'API (voir `docs/conception_api_rest.md`, section 4.1). Développement prévu en Phase 8.
+**Implémenté (partiel)** : `LoginPage.jsx` — formulaire de connexion consommant `POST /v1/auth/login`.
+
+Manquant : persistance de session (le jeton est perdu au rafraîchissement de la page), gestion de l'expiration du jeton, écran dédié de déconnexion.

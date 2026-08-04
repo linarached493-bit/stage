@@ -1,3 +1,5 @@
 # Client API
 
-Accueillera le futur client HTTP centralisé vers l'API Backend, seul point d'échange autorisé entre l'Interface Web et le système, conformément au principe d'accès unique retenu dans `docs/specifications_techniques.md` (section 7). Développement prévu en Phase 8.
+**Implémenté (partiel)** : `client.js` — fonctions `login()` et `fetchAlertes()`.
+
+Point d'accès unique vers l'API Backend, conformément au principe retenu dans `docs/specifications_techniques.md` (section 7). À compléter au fur et à mesure de l'ajout des autres ressources (logs, règles, statistiques, configuration, liste noire, utilisateurs).

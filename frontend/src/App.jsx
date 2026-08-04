@@ -1,13 +1,16 @@
-// Phase 1 — Initialisation : écran de démarrage minimal.
-// Les écrans fonctionnels (alertes, journaux, règles, statistiques, ...)
-// seront ajoutés à partir de la Phase 8 (voir docs/plan_de_developpement.md).
+import { useState } from "react";
+import AlertsPage from "./features/alerts/AlertsPage.jsx";
+import LoginPage from "./features/auth/LoginPage.jsx";
+
+// Deux écrans seulement : un routeur dédié serait prématuré (voir
+// react-router-dom, déjà déclaré en dépendance pour les phases suivantes).
 function App() {
-  return (
-    <main>
-      <h1>IDS — Centre Cinématographique Marocain</h1>
-      <p>Phase 1 : initialisation du projet. Aucune fonctionnalité n'est encore disponible.</p>
-    </main>
-  );
+  const [jeton, setJeton] = useState(null);
+
+  if (!jeton) {
+    return <LoginPage onConnecte={setJeton} />;
+  }
+  return <AlertsPage jeton={jeton} onDeconnexion={() => setJeton(null)} />;
 }
 
 export default App;
