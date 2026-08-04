@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from app.analysis.indicators import (
     nombre_echecs_authentification_consecutifs,
+    nombre_evenements_avec_port_interdit,
     nombre_evenements_par_source,
     nombre_ports_distincts,
 )
@@ -183,3 +184,52 @@ def test_nombre_evenements_par_source_reutilisable_pour_icmp_flood():
     )
 
     assert resultat == 150
+
+
+def test_nombre_evenements_avec_port_interdit_detecte_un_port_de_la_liste():
+    evenements = [
+        _evenement_connexion("192.168.1.40", port=3389),  # RDP, interdit
+        _evenement_connexion("192.168.1.40", port=443),  # autorisé
+    ]
+
+    resultat = nombre_evenements_avec_port_interdit(
+        evenements, "192.168.1.40", ports_interdits=frozenset({23, 3389})
+    )
+
+    assert resultat == 1
+
+
+def test_nombre_evenements_avec_port_interdit_zero_si_aucun_port_interdit():
+    evenements = [
+        _evenement_connexion("192.168.1.40", port=443),
+        _evenement_connexion("192.168.1.40", port=80),
+    ]
+
+    resultat = nombre_evenements_avec_port_interdit(
+        evenements, "192.168.1.40", ports_interdits=frozenset({23, 3389})
+    )
+
+    assert resultat == 0
+
+
+def test_nombre_evenements_avec_port_interdit_ignore_les_autres_sources():
+    evenements = [
+        _evenement_connexion("192.168.1.40", port=3389),
+        _evenement_connexion("10.0.0.9", port=3389),
+    ]
+
+    resultat = nombre_evenements_avec_port_interdit(
+        evenements, "192.168.1.40", ports_interdits=frozenset({3389})
+    )
+
+    assert resultat == 1
+
+
+def test_nombre_evenements_avec_port_interdit_vide_si_ensemble_vide():
+    evenements = [_evenement_connexion("192.168.1.40", port=3389)]
+
+    resultat = nombre_evenements_avec_port_interdit(
+        evenements, "192.168.1.40", ports_interdits=frozenset()
+    )
+
+    assert resultat == 0

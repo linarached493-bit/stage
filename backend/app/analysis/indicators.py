@@ -83,6 +83,37 @@ def nombre_evenements_par_source(
     )
 
 
+def nombre_evenements_avec_port_interdit(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    ports_interdits: frozenset[int],
+) -> int:
+    """Nombre d'événements de `ip_source` dont le port utilisé figure dans
+    `ports_interdits`.
+
+    Indicateur générique d'appartenance à un ensemble de ports fourni de
+    l'extérieur (et non figé dans le code), utilisé par la règle
+    Utilisation de ports interdits (docs/cahier_des_charges.md,
+    section 7.9). Aucune fenêtre temporelle : une seule communication
+    sur un port interdit suffit à qualifier l'événement, contrairement
+    aux indicateurs volumétriques ci-dessus.
+
+    Suit le même principe que la règle IP blacklistée (comparaison à un
+    ensemble de référence porté par `ContexteDetection`, voir
+    app/detection/engine.py), mais appliqué au port plutôt qu'à
+    l'adresse IP source ; réutilisable pour toute future règle fondée
+    sur l'appartenance du port à un ensemble configurable (ports
+    autorisés, ports sensibles, etc.).
+    """
+    return sum(
+        1
+        for evenement in evenements
+        if evenement.ip_source == ip_source
+        and evenement.port is not None
+        and evenement.port in ports_interdits
+    )
+
+
 def nombre_echecs_authentification_consecutifs(
     evenements: list[EvenementReseau],
     ip_source: str,

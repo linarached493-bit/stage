@@ -14,6 +14,8 @@ from app.alerts.service import creer_alertes
 from app.auth.models import Role, StatutCompte, Utilisateur
 from app.auth.security import hash_password
 from app.capture.events import EvenementReseau
+from app.configuration.models import ParametreConfiguration
+from app.configuration.service import ports_interdits_actifs
 from app.database.enums import Gravite
 from app.database.session import get_db
 from app.detection.engine import MoteurDetection
@@ -283,3 +285,42 @@ def test_scenario_icmp_flood_visible_via_api(client, db_session):
     assert alertes[0]["ip_source"] == "198.51.100.9"
     assert alertes[0]["type_menace"] == "icmp_flood"
     assert alertes[0]["gravite"] == "eleve"
+
+
+def test_scenario_ports_interdits_visible_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Utilisation de ports interdits",
+        type_menace="ports_interdits",
+        condition_declenchement=json.dumps({"indicateur": "port_interdit_utilise", "seuil": 1}),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.add(
+        ParametreConfiguration(nom_parametre="ports_interdits", valeur=json.dumps([23, 3389]))
+    )
+    db_session.commit()
+
+    maintenant = datetime.now()
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.40", type_evenement="connexion", horodatage=maintenant, port=3389
+        )
+    ]
+    ports_interdits = ports_interdits_actifs(db_session)
+    detections = MoteurDetection([regle], ports_interdits=ports_interdits).evaluer(
+        evenements, maintenant
+    )
+    creer_alertes(db_session, detections)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/alertes", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    alertes = reponse.json()
+    assert len(alertes) == 1
+    assert alertes[0]["ip_source"] == "192.168.1.40"
+    assert alertes[0]["type_menace"] == "ports_interdits"
+    assert alertes[0]["gravite"] == "moyen"

@@ -15,6 +15,7 @@ from datetime import datetime
 
 from app.analysis.indicators import (
     nombre_echecs_authentification_consecutifs,
+    nombre_evenements_avec_port_interdit,
     nombre_evenements_par_source,
     nombre_ports_distincts,
 )
@@ -31,10 +32,14 @@ class DetectionPositive:
 @dataclass(frozen=True, slots=True)
 class ContexteDetection:
     """Données auxiliaires qu'un indicateur peut consulter en plus des
-    événements observés (ex. la liste noire pour la règle IP blacklistée,
-    docs/cahier_des_charges.md, section 7.6)."""
+    événements observés : des ensembles de référence alimentés par la
+    Configuration (docs/architecture_logicielle.md, section 4.10), utilisés
+    par les règles fondées sur une appartenance à un ensemble plutôt que
+    sur un seuil temporel (IP blacklistée, section 7.6 ; ports interdits,
+    section 7.9 du cahier des charges)."""
 
     adresses_blacklistees: frozenset[str] = field(default_factory=frozenset)
+    ports_interdits: frozenset[int] = field(default_factory=frozenset)
 
 
 CalculateurIndicateur = Callable[
@@ -74,6 +79,16 @@ def _calculer_appartenance_liste_noire(
     return 1 if ip_source in contexte.adresses_blacklistees else 0
 
 
+def _calculer_port_interdit(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    condition: dict,
+    maintenant: datetime,
+    contexte: ContexteDetection,
+) -> int:
+    return nombre_evenements_avec_port_interdit(evenements, ip_source, contexte.ports_interdits)
+
+
 def _calculer_nombre_evenements(
     evenements: list[EvenementReseau],
     ip_source: str,
@@ -99,13 +114,23 @@ CALCULATEURS_INDICATEURS: dict[str, CalculateurIndicateur] = {
     # `type_evenement` dans la condition de la règle (voir
     # app/analysis/indicators.py, docstring de nombre_evenements_par_source).
     "nombre_evenements_par_source": _calculer_nombre_evenements,
+    # Même principe qu'"adresse_dans_liste_noire", appliqué au port :
+    # appartenance à un ensemble configurable porté par le Contexte.
+    "port_interdit_utilise": _calculer_port_interdit,
 }
 
 
 class MoteurDetection:
-    def __init__(self, regles: list[Regle], adresses_blacklistees: frozenset[str] = frozenset()):
+    def __init__(
+        self,
+        regles: list[Regle],
+        adresses_blacklistees: frozenset[str] = frozenset(),
+        ports_interdits: frozenset[int] = frozenset(),
+    ):
         self._regles = [regle for regle in regles if regle.statut is StatutRegle.ACTIVE]
-        self._contexte = ContexteDetection(adresses_blacklistees=adresses_blacklistees)
+        self._contexte = ContexteDetection(
+            adresses_blacklistees=adresses_blacklistees, ports_interdits=ports_interdits
+        )
 
     def evaluer(
         self, evenements: list[EvenementReseau], maintenant: datetime

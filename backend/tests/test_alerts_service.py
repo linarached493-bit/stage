@@ -11,8 +11,8 @@ from app.alerts.models import Alerte, StatutAlerte
 from app.alerts.service import creer_alertes
 from app.auth.models import Role, Utilisateur
 from app.capture.events import EvenementReseau
-from app.configuration.models import AdresseListeNoire
-from app.configuration.service import adresses_blacklistees_actives
+from app.configuration.models import AdresseListeNoire, ParametreConfiguration
+from app.configuration.service import adresses_blacklistees_actives, ports_interdits_actifs
 from app.database.enums import Gravite
 from app.detection.engine import MoteurDetection
 from app.detection.models import Regle, StatutRegle
@@ -251,4 +251,42 @@ def test_scenario_icmp_flood_de_bout_en_bout(db_session):
     assert alerte_persistee.ip_source == "198.51.100.9"
     assert alerte_persistee.type_menace == "icmp_flood"
     assert alerte_persistee.gravite is Gravite.ELEVE
+    assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE
+
+
+def test_scenario_ports_interdits_de_bout_en_bout(db_session):
+    role = Role(nom="Administrateur")
+    auteur = Utilisateur(nom_utilisateur="admin", mot_de_passe_hash="x", role=role)
+    regle = Regle(
+        nom="Utilisation de ports interdits",
+        type_menace="ports_interdits",
+        condition_declenchement=json.dumps({"indicateur": "port_interdit_utilise", "seuil": 1}),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    # Politique de sécurité du CCM configurée via l'entité Configuration.
+    db_session.add(
+        ParametreConfiguration(nom_parametre="ports_interdits", valeur=json.dumps([23, 3389]))
+    )
+    db_session.commit()
+
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.40", type_evenement="connexion", horodatage=MAINTENANT, port=3389
+        )
+    ]
+
+    ports_interdits = ports_interdits_actifs(db_session)
+    detections = MoteurDetection([regle], ports_interdits=ports_interdits).evaluer(
+        evenements, MAINTENANT
+    )
+    alertes = creer_alertes(db_session, detections)
+
+    assert len(alertes) == 1
+    alerte_persistee = db_session.query(Alerte).one()
+    assert alerte_persistee.ip_source == "192.168.1.40"
+    assert alerte_persistee.type_menace == "ports_interdits"
+    assert alerte_persistee.gravite is Gravite.MOYEN
     assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE

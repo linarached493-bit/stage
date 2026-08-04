@@ -92,6 +92,16 @@ def _regle_icmp_flood(seuil: int = 150) -> Regle:
     )
 
 
+def _regle_ports_interdits() -> Regle:
+    return Regle(
+        nom="Utilisation de ports interdits",
+        type_menace="ports_interdits",
+        condition_declenchement=json.dumps({"indicateur": "port_interdit_utilise", "seuil": 1}),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+    )
+
+
 def test_moteur_detecte_un_port_scan_simule():
     regle = _regle_port_scan(seuil=15)
     evenements = [
@@ -349,6 +359,88 @@ def test_icmp_flood_independant_des_autres_menaces_volumetriques():
         ("icmp_flood", "198.51.100.9"),
         ("syn_flood", "198.51.100.7"),
         ("tentatives_repetees_connexion", "192.168.1.30"),
+    }
+
+
+def test_moteur_detecte_une_utilisation_de_port_interdit():
+    regle = _regle_ports_interdits()
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.40", type_evenement="connexion", horodatage=MAINTENANT, port=3389
+        )
+    ]
+
+    detections = MoteurDetection([regle], ports_interdits=frozenset({23, 3389})).evaluer(
+        evenements, MAINTENANT
+    )
+
+    assert len(detections) == 1
+    assert detections[0].ip_source == "192.168.1.40"
+    assert detections[0].regle.type_menace == "ports_interdits"
+
+
+def test_moteur_ne_declenche_rien_si_seuls_des_ports_autorises_sont_utilises():
+    regle = _regle_ports_interdits()
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.40", type_evenement="connexion", horodatage=MAINTENANT, port=443
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.40", type_evenement="connexion", horodatage=MAINTENANT, port=80
+        ),
+    ]
+
+    detections = MoteurDetection([regle], ports_interdits=frozenset({23, 3389})).evaluer(
+        evenements, MAINTENANT
+    )
+
+    assert detections == []
+
+
+def test_moteur_sans_ports_interdits_fournis_ne_detecte_rien_par_defaut():
+    """Compatibilité ascendante, comme pour la liste noire : construire
+    le moteur sans préciser les ports interdits ne doit jamais lever
+    d'erreur ni déclencher cette règle par accident."""
+    regle = _regle_ports_interdits()
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.40", type_evenement="connexion", horodatage=MAINTENANT, port=3389
+        )
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
+
+
+def test_ports_interdits_independant_des_autres_menaces():
+    """Une communication sur un port interdit ne doit pas, à elle seule,
+    déclencher les règles Port Scan ou Tentatives répétées de connexion,
+    et inversement."""
+    evenements_port_interdit = [
+        EvenementReseau(
+            ip_source="192.168.1.40", type_evenement="connexion", horodatage=MAINTENANT, port=3389
+        )
+    ]
+    evenements_scan = [
+        EvenementReseau(
+            ip_source="192.168.1.99",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=port,
+        )
+        for i, port in enumerate(range(1000, 1020))
+    ]
+
+    detections = MoteurDetection(
+        [_regle_ports_interdits(), _regle_port_scan(seuil=15)],
+        ports_interdits=frozenset({3389}),
+    ).evaluer(evenements_port_interdit + evenements_scan, MAINTENANT)
+
+    resultats = {(d.regle.type_menace, d.ip_source) for d in detections}
+    assert resultats == {
+        ("ports_interdits", "192.168.1.40"),
+        ("port_scan", "192.168.1.99"),
     }
 
 
