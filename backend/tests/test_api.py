@@ -240,3 +240,46 @@ def test_scenario_syn_flood_visible_via_api(client, db_session):
     assert alertes[0]["ip_source"] == "198.51.100.7"
     assert alertes[0]["type_menace"] == "syn_flood"
     assert alertes[0]["gravite"] == "eleve"
+
+
+def test_scenario_icmp_flood_visible_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="ICMP Flood",
+        type_menace="icmp_flood",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "icmp",
+                "seuil": 150,
+                "fenetre_secondes": 10,
+            }
+        ),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    maintenant = datetime.now()
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.9",
+            type_evenement="icmp",
+            horodatage=maintenant - timedelta(milliseconds=i * 10),
+        )
+        for i in range(200)
+    ]
+    detections = MoteurDetection([regle]).evaluer(evenements, maintenant)
+    creer_alertes(db_session, detections)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/alertes", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    alertes = reponse.json()
+    assert len(alertes) == 1
+    assert alertes[0]["ip_source"] == "198.51.100.9"
+    assert alertes[0]["type_menace"] == "icmp_flood"
+    assert alertes[0]["gravite"] == "eleve"

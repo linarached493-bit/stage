@@ -75,6 +75,23 @@ def _regle_syn_flood(seuil: int = 100) -> Regle:
     )
 
 
+def _regle_icmp_flood(seuil: int = 150) -> Regle:
+    return Regle(
+        nom="ICMP Flood",
+        type_menace="icmp_flood",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "icmp",
+                "seuil": seuil,
+                "fenetre_secondes": 10,
+            }
+        ),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+    )
+
+
 def test_moteur_detecte_un_port_scan_simule():
     regle = _regle_port_scan(seuil=15)
     evenements = [
@@ -249,6 +266,87 @@ def test_syn_flood_et_tentatives_repetees_sont_independants():
 
     resultats = {(d.regle.type_menace, d.ip_source) for d in detections}
     assert resultats == {
+        ("syn_flood", "198.51.100.7"),
+        ("tentatives_repetees_connexion", "192.168.1.30"),
+    }
+
+
+def test_moteur_detecte_un_icmp_flood_simule():
+    regle = _regle_icmp_flood(seuil=150)
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.9",
+            type_evenement="icmp",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+        )
+        for i in range(200)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert len(detections) == 1
+    assert detections[0].ip_source == "198.51.100.9"
+    assert detections[0].regle.type_menace == "icmp_flood"
+
+
+def test_moteur_ne_declenche_pas_icmp_flood_sous_le_seuil():
+    regle = _regle_icmp_flood(seuil=150)
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.9",
+            type_evenement="icmp",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+        )
+        for i in range(20)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
+
+
+def test_icmp_flood_independant_des_autres_menaces_volumetriques():
+    """Même indicateur générique que SYN Flood et Tentatives répétées de
+    connexion : chaque règle ne doit réagir qu'à son propre
+    `type_evenement`, même quand les trois trafics sont mélangés."""
+    evenements_icmp = [
+        EvenementReseau(
+            ip_source="198.51.100.9",
+            type_evenement="icmp",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+        )
+        for i in range(200)
+    ]
+    evenements_syn = [
+        EvenementReseau(
+            ip_source="198.51.100.7",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(150)
+    ]
+    evenements_connexion = [
+        EvenementReseau(
+            ip_source="192.168.1.30",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(25)
+    ]
+
+    detections = MoteurDetection(
+        [
+            _regle_icmp_flood(seuil=150),
+            _regle_syn_flood(seuil=100),
+            _regle_tentatives_repetees_connexion(seuil=20),
+        ]
+    ).evaluer(evenements_icmp + evenements_syn + evenements_connexion, MAINTENANT)
+
+    resultats = {(d.regle.type_menace, d.ip_source) for d in detections}
+    assert resultats == {
+        ("icmp_flood", "198.51.100.9"),
         ("syn_flood", "198.51.100.7"),
         ("tentatives_repetees_connexion", "192.168.1.30"),
     }

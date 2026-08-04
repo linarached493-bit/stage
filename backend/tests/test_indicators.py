@@ -160,3 +160,26 @@ def test_nombre_evenements_par_source_reutilisable_pour_un_autre_type_evenement(
     )
 
     assert resultat == 100
+
+
+def test_nombre_evenements_par_source_reutilisable_pour_icmp_flood():
+    """Même indicateur, `type_evenement="icmp"` cette fois : réutilisé
+    pour la règle ICMP Flood sans modification de code."""
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.30",
+            type_evenement="icmp",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+        )
+        for i in range(150)
+    ]
+
+    resultat = nombre_evenements_par_source(
+        evenements,
+        "192.168.1.30",
+        type_evenement="icmp",
+        fenetre_secondes=10,
+        maintenant=MAINTENANT,
+    )
+
+    assert resultat == 150
