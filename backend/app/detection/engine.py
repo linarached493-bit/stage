@@ -10,7 +10,7 @@ décision de garder l'entité Règle générique
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.analysis.indicators import (
@@ -27,11 +27,26 @@ class DetectionPositive:
     ip_source: str
 
 
-CalculateurIndicateur = Callable[[list[EvenementReseau], str, dict, datetime], int]
+@dataclass(frozen=True, slots=True)
+class ContexteDetection:
+    """Données auxiliaires qu'un indicateur peut consulter en plus des
+    événements observés (ex. la liste noire pour la règle IP blacklistée,
+    docs/cahier_des_charges.md, section 7.6)."""
+
+    adresses_blacklistees: frozenset[str] = field(default_factory=frozenset)
+
+
+CalculateurIndicateur = Callable[
+    [list[EvenementReseau], str, dict, datetime, ContexteDetection], int
+]
 
 
 def _calculer_ports_distincts(
-    evenements: list[EvenementReseau], ip_source: str, condition: dict, maintenant: datetime
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    condition: dict,
+    maintenant: datetime,
+    contexte: ContexteDetection,
 ) -> int:
     return nombre_ports_distincts(
         evenements, ip_source, condition.get("fenetre_secondes", 60), maintenant
@@ -39,20 +54,36 @@ def _calculer_ports_distincts(
 
 
 def _calculer_echecs_consecutifs(
-    evenements: list[EvenementReseau], ip_source: str, condition: dict, maintenant: datetime
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    condition: dict,
+    maintenant: datetime,
+    contexte: ContexteDetection,
 ) -> int:
     return nombre_echecs_authentification_consecutifs(evenements, ip_source)
+
+
+def _calculer_appartenance_liste_noire(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    condition: dict,
+    maintenant: datetime,
+    contexte: ContexteDetection,
+) -> int:
+    return 1 if ip_source in contexte.adresses_blacklistees else 0
 
 
 CALCULATEURS_INDICATEURS: dict[str, CalculateurIndicateur] = {
     "ports_distincts_par_source": _calculer_ports_distincts,
     "echecs_consecutifs": _calculer_echecs_consecutifs,
+    "adresse_dans_liste_noire": _calculer_appartenance_liste_noire,
 }
 
 
 class MoteurDetection:
-    def __init__(self, regles: list[Regle]):
+    def __init__(self, regles: list[Regle], adresses_blacklistees: frozenset[str] = frozenset()):
         self._regles = [regle for regle in regles if regle.statut is StatutRegle.ACTIVE]
+        self._contexte = ContexteDetection(adresses_blacklistees=adresses_blacklistees)
 
     def evaluer(
         self, evenements: list[EvenementReseau], maintenant: datetime
@@ -68,7 +99,7 @@ class MoteurDetection:
 
             seuil = condition["seuil"]
             for ip_source in sources:
-                valeur = calculateur(evenements, ip_source, condition, maintenant)
+                valeur = calculateur(evenements, ip_source, condition, maintenant, self._contexte)
                 if valeur >= seuil:
                     detections.append(DetectionPositive(regle=regle, ip_source=ip_source))
 

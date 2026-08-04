@@ -11,6 +11,8 @@ from app.alerts.models import Alerte, StatutAlerte
 from app.alerts.service import creer_alertes
 from app.auth.models import Role, Utilisateur
 from app.capture.events import EvenementReseau
+from app.configuration.models import AdresseListeNoire
+from app.configuration.service import adresses_blacklistees_actives
 from app.database.enums import Gravite
 from app.detection.engine import MoteurDetection
 from app.detection.models import Regle, StatutRegle
@@ -83,3 +85,39 @@ def test_trafic_normal_ne_genere_aucune_alerte(db_session):
 
     assert alertes == []
     assert db_session.query(Alerte).count() == 0
+
+
+def test_scenario_ip_blacklistee_de_bout_en_bout(db_session):
+    role = Role(nom="Administrateur")
+    auteur = Utilisateur(nom_utilisateur="admin", mot_de_passe_hash="x", role=role)
+    regle = Regle(
+        nom="IP blacklistée",
+        type_menace="ip_blacklistee",
+        condition_declenchement=json.dumps({"indicateur": "adresse_dans_liste_noire", "seuil": 1}),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.add(
+        AdresseListeNoire(adresse_ip="203.0.113.66", motif_source="Renseignement manuel")
+    )
+    db_session.commit()
+
+    evenements = [
+        EvenementReseau(
+            ip_source="203.0.113.66", type_evenement="connexion", horodatage=MAINTENANT, port=443
+        )
+    ]
+
+    liste_noire = adresses_blacklistees_actives(db_session)
+    detections = MoteurDetection([regle], adresses_blacklistees=liste_noire).evaluer(
+        evenements, MAINTENANT
+    )
+    alertes = creer_alertes(db_session, detections)
+
+    assert len(alertes) == 1
+    alerte_persistee = db_session.query(Alerte).one()
+    assert alerte_persistee.ip_source == "203.0.113.66"
+    assert alerte_persistee.type_menace == "ip_blacklistee"
+    assert alerte_persistee.gravite is Gravite.ELEVE

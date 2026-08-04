@@ -31,6 +31,16 @@ def _regle_brute_force(seuil: int = 5) -> Regle:
     )
 
 
+def _regle_ip_blacklistee() -> Regle:
+    return Regle(
+        nom="IP blacklistée",
+        type_menace="ip_blacklistee",
+        condition_declenchement=json.dumps({"indicateur": "adresse_dans_liste_noire", "seuil": 1}),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+    )
+
+
 def test_moteur_detecte_un_port_scan_simule():
     regle = _regle_port_scan(seuil=15)
     evenements = [
@@ -128,3 +138,51 @@ def test_moteur_evalue_plusieurs_regles_et_sources_independamment():
 
     sources_detectees = {d.ip_source for d in detections}
     assert sources_detectees == {"192.168.1.99", "10.0.0.7"}
+
+
+def test_moteur_detecte_une_communication_avec_une_ip_blacklistee():
+    regle = _regle_ip_blacklistee()
+    evenements = [
+        EvenementReseau(
+            ip_source="203.0.113.66", type_evenement="connexion", horodatage=MAINTENANT, port=443
+        )
+    ]
+
+    detections = MoteurDetection(
+        [regle], adresses_blacklistees=frozenset({"203.0.113.66"})
+    ).evaluer(evenements, MAINTENANT)
+
+    assert len(detections) == 1
+    assert detections[0].ip_source == "203.0.113.66"
+    assert detections[0].regle.type_menace == "ip_blacklistee"
+
+
+def test_moteur_ignore_une_ip_non_blacklistee():
+    regle = _regle_ip_blacklistee()
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.5", type_evenement="connexion", horodatage=MAINTENANT, port=443
+        )
+    ]
+
+    detections = MoteurDetection(
+        [regle], adresses_blacklistees=frozenset({"203.0.113.66"})
+    ).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
+
+
+def test_moteur_sans_liste_noire_fournie_ne_detecte_rien_par_defaut():
+    """Compatibilité ascendante : construire le moteur sans préciser la
+    liste noire (comme le fait le code déjà existant) ne doit jamais
+    lever d'erreur ni déclencher cette règle par accident."""
+    regle = _regle_ip_blacklistee()
+    evenements = [
+        EvenementReseau(
+            ip_source="203.0.113.66", type_evenement="connexion", horodatage=MAINTENANT, port=443
+        )
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
