@@ -9,5 +9,10 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.flake8-bugbear]
+# Le pattern `param: T = Depends(...)` est l'usage idiomatique et
+# documenté de FastAPI pour l'injection de dépendances, pas un bug.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Body", "fastapi.Path"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

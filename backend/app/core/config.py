@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     database_url: str = ""
     cors_origins: str = "http://localhost:5173"
 
+    # Authentification (voir docs/conception_api_rest.md, section 5 et
+    # docs/preparation_implementation.md, section 3.4 pour la durée de session)
+    secret_key: str = "changez-moi-en-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

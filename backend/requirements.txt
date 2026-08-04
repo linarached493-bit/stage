@@ -12,7 +12,9 @@ psycopg2-binary==2.9.12
 alembic==1.13.3
 
 # Authentification (utilisée à partir de la Phase 6 — Authentification)
-passlib[bcrypt]==1.7.4
+# bcrypt utilisé directement : passlib (dernière version 1.7.4, non
+# maintenue depuis 2020) est incompatible avec bcrypt >= 4.1.
+bcrypt==5.0.0
 python-jose[cryptography]==3.3.0
 
 # Capture réseau (utilisée à partir de la Phase 4 — Capture réseau)
