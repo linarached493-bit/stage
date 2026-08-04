@@ -1,0 +1,19 @@
+# Dépendances d'exécution du backend.
+# Stack validée dans docs/specifications_techniques.md (section 5).
+
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# Base de données (utilisée à partir de la Phase 2 — Base de données)
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.13.3
+
+# Authentification (utilisée à partir de la Phase 6 — Authentification)
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+
+# Capture réseau (utilisée à partir de la Phase 4 — Capture réseau)
+scapy==2.5.0
