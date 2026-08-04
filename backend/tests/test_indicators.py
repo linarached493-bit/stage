@@ -139,3 +139,24 @@ def test_nombre_evenements_par_source_ignore_hors_fenetre_et_autres_sources():
     )
 
     assert resultat == 1
+
+
+def test_nombre_evenements_par_source_reutilisable_pour_un_autre_type_evenement():
+    """Même indicateur, autre `type_evenement` : c'est exactement ce qui
+    permet de réutiliser cette fonction pour la règle SYN Flood sans
+    modification de code (voir sa docstring)."""
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.30",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(100)
+    ]
+
+    resultat = nombre_evenements_par_source(
+        evenements, "192.168.1.30", type_evenement="syn", fenetre_secondes=10, maintenant=MAINTENANT
+    )
+
+    assert resultat == 100

@@ -94,9 +94,10 @@ CALCULATEURS_INDICATEURS: dict[str, CalculateurIndicateur] = {
     "ports_distincts_par_source": _calculer_ports_distincts,
     "echecs_consecutifs": _calculer_echecs_consecutifs,
     "adresse_dans_liste_noire": _calculer_appartenance_liste_noire,
-    # Indicateur générique : réutilisable tel quel pour SYN Flood et
-    # ICMP Flood en changeant seulement `type_evenement` dans la
-    # condition de la règle, sans nouveau code (voir
+    # Indicateur générique : sert déjà les règles Tentatives répétées de
+    # connexion et SYN Flood, distinguées uniquement par le
+    # `type_evenement` dans la condition de la règle ; réutilisable pour
+    # ICMP Flood de la même façon, sans nouveau code (voir
     # app/analysis/indicators.py, docstring de nombre_evenements_par_source).
     "nombre_evenements_par_source": _calculer_nombre_evenements,
 }

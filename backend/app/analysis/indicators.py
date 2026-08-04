@@ -64,13 +64,15 @@ def nombre_evenements_par_source(
     """Nombre d'événements d'un type donné (`type_evenement`) observés pour
     `ip_source` sur la fenêtre des `fenetre_secondes` dernières secondes.
 
-    Indicateur générique de fréquence, utilisé par la règle Tentatives
-    répétées de connexion avec `type_evenement="connexion"`
-    (docs/cahier_des_charges.md, section 7.5). Sa généricité permet de
-    couvrir plus tard SYN Flood et ICMP Flood par simple paramétrage
-    d'une nouvelle règle (`type_evenement="syn"` / `"icmp"`), sans
-    modification de code (voir docs/preparation_implementation.md,
-    section 3.3 sur la généricité de l'entité Règle).
+    Indicateur générique de fréquence, réutilisé tel quel par plusieurs
+    règles distinguées uniquement par la valeur de `type_evenement` dans
+    leur condition : Tentatives répétées de connexion
+    (`type_evenement="connexion"`, docs/cahier_des_charges.md, section 7.5)
+    et SYN Flood (`type_evenement="syn"`, section 7.2). Reste réutilisable
+    pour ICMP Flood (`type_evenement="icmp"`) par simple ajout d'une
+    règle, sans modification de code (voir
+    docs/preparation_implementation.md, section 3.3 sur la généricité de
+    l'entité Règle).
     """
     return sum(
         1

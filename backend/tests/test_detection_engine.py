@@ -58,6 +58,23 @@ def _regle_tentatives_repetees_connexion(seuil: int = 20) -> Regle:
     )
 
 
+def _regle_syn_flood(seuil: int = 100) -> Regle:
+    return Regle(
+        nom="SYN Flood",
+        type_menace="syn_flood",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "syn",
+                "seuil": seuil,
+                "fenetre_secondes": 10,
+            }
+        ),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+    )
+
+
 def test_moteur_detecte_un_port_scan_simule():
     regle = _regle_port_scan(seuil=15)
     evenements = [
@@ -166,6 +183,75 @@ def test_moteur_ne_declenche_pas_tentatives_repetees_sous_le_seuil():
     detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
 
     assert detections == []
+
+
+def test_moteur_detecte_un_syn_flood_simule():
+    regle = _regle_syn_flood(seuil=100)
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.7",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(150)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert len(detections) == 1
+    assert detections[0].ip_source == "198.51.100.7"
+    assert detections[0].regle.type_menace == "syn_flood"
+
+
+def test_moteur_ne_declenche_pas_syn_flood_sous_le_seuil():
+    regle = _regle_syn_flood(seuil=100)
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.7",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(10)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
+
+
+def test_syn_flood_et_tentatives_repetees_sont_independants():
+    """Même indicateur générique, `type_evenement` différent : les deux
+    règles ne doivent réagir qu'à leur propre type d'événement."""
+    evenements_syn = [
+        EvenementReseau(
+            ip_source="198.51.100.7",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(150)
+    ]
+    evenements_connexion = [
+        EvenementReseau(
+            ip_source="192.168.1.30",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(25)
+    ]
+
+    detections = MoteurDetection(
+        [_regle_syn_flood(seuil=100), _regle_tentatives_repetees_connexion(seuil=20)]
+    ).evaluer(evenements_syn + evenements_connexion, MAINTENANT)
+
+    resultats = {(d.regle.type_menace, d.ip_source) for d in detections}
+    assert resultats == {
+        ("syn_flood", "198.51.100.7"),
+        ("tentatives_repetees_connexion", "192.168.1.30"),
+    }
 
 
 def test_moteur_evalue_plusieurs_regles_et_sources_independamment():

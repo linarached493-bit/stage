@@ -196,3 +196,47 @@ def test_scenario_tentatives_repetees_connexion_visible_via_api(client, db_sessi
     assert len(alertes) == 1
     assert alertes[0]["ip_source"] == "198.51.100.44"
     assert alertes[0]["type_menace"] == "tentatives_repetees_connexion"
+
+
+def test_scenario_syn_flood_visible_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="SYN Flood",
+        type_menace="syn_flood",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "syn",
+                "seuil": 100,
+                "fenetre_secondes": 10,
+            }
+        ),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    maintenant = datetime.now()
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.7",
+            type_evenement="syn",
+            horodatage=maintenant - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(150)
+    ]
+    detections = MoteurDetection([regle]).evaluer(evenements, maintenant)
+    creer_alertes(db_session, detections)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/alertes", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    alertes = reponse.json()
+    assert len(alertes) == 1
+    assert alertes[0]["ip_source"] == "198.51.100.7"
+    assert alertes[0]["type_menace"] == "syn_flood"
+    assert alertes[0]["gravite"] == "eleve"

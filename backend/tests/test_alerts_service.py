@@ -165,3 +165,47 @@ def test_scenario_tentatives_repetees_connexion_de_bout_en_bout(db_session):
     assert alerte_persistee.type_menace == "tentatives_repetees_connexion"
     assert alerte_persistee.gravite is Gravite.MOYEN
     assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE
+
+
+def test_scenario_syn_flood_de_bout_en_bout(db_session):
+    role = Role(nom="Administrateur")
+    auteur = Utilisateur(nom_utilisateur="admin", mot_de_passe_hash="x", role=role)
+    regle = Regle(
+        nom="SYN Flood",
+        type_menace="syn_flood",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "syn",
+                "seuil": 100,
+                "fenetre_secondes": 10,
+            }
+        ),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    # 150 paquets SYN en rafale, sans finalisation de la connexion :
+    # saturation de la table de connexions de la cible.
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.7",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(150)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+    alertes = creer_alertes(db_session, detections)
+
+    assert len(alertes) == 1
+    alerte_persistee = db_session.query(Alerte).one()
+    assert alerte_persistee.ip_source == "198.51.100.7"
+    assert alerte_persistee.type_menace == "syn_flood"
+    assert alerte_persistee.gravite is Gravite.ELEVE
+    assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE
