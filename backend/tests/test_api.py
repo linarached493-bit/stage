@@ -153,3 +153,46 @@ def test_regles_accessible_a_lanalyste(client, db_session):
     assert reponse.status_code == 200
     assert len(reponse.json()) == 1
     assert reponse.json()[0]["nom"] == "Brute Force"
+
+
+def test_scenario_tentatives_repetees_connexion_visible_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Tentatives répétées de connexion",
+        type_menace="tentatives_repetees_connexion",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "connexion",
+                "seuil": 20,
+                "fenetre_secondes": 60,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    maintenant = datetime.now()
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.44",
+            type_evenement="connexion",
+            horodatage=maintenant - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(25)
+    ]
+    detections = MoteurDetection([regle]).evaluer(evenements, maintenant)
+    creer_alertes(db_session, detections)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/alertes", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    alertes = reponse.json()
+    assert len(alertes) == 1
+    assert alertes[0]["ip_source"] == "198.51.100.44"
+    assert alertes[0]["type_menace"] == "tentatives_repetees_connexion"

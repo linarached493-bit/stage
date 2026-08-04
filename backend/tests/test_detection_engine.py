@@ -41,6 +41,23 @@ def _regle_ip_blacklistee() -> Regle:
     )
 
 
+def _regle_tentatives_repetees_connexion(seuil: int = 20) -> Regle:
+    return Regle(
+        nom="Tentatives répétées de connexion",
+        type_menace="tentatives_repetees_connexion",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "connexion",
+                "seuil": seuil,
+                "fenetre_secondes": 60,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+    )
+
+
 def test_moteur_detecte_un_port_scan_simule():
     regle = _regle_port_scan(seuil=15)
     evenements = [
@@ -106,6 +123,44 @@ def test_moteur_ignore_les_regles_inactives():
             port=port,
         )
         for i, port in enumerate(range(1000, 1020))
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
+
+
+def test_moteur_detecte_des_tentatives_repetees_de_connexion():
+    regle = _regle_tentatives_repetees_connexion(seuil=20)
+    # Même port sollicité 25 fois : un Port Scan (ports distincts) ne le
+    # détecterait pas, mais la fréquence de connexion, si.
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.30",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(25)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert len(detections) == 1
+    assert detections[0].ip_source == "192.168.1.30"
+    assert detections[0].regle.type_menace == "tentatives_repetees_connexion"
+
+
+def test_moteur_ne_declenche_pas_tentatives_repetees_sous_le_seuil():
+    regle = _regle_tentatives_repetees_connexion(seuil=20)
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.30",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(5)
     ]
 
     detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)

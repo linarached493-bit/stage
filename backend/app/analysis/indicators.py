@@ -4,9 +4,32 @@ Transforme une liste d'événements réseau bruts en indicateurs
 numériques exploitables par le Moteur de détection.
 """
 
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 
 from app.capture.events import EvenementReseau
+
+
+def _evenements_dans_la_fenetre(
+    evenements: Iterable[EvenementReseau],
+    ip_source: str,
+    fenetre_secondes: int,
+    maintenant: datetime,
+) -> list[EvenementReseau]:
+    """Sous-ensemble des événements de `ip_source` observés dans les
+    `fenetre_secondes` dernières secondes avant `maintenant`.
+
+    Filtre commun à plusieurs indicateurs fondés sur une fenêtre
+    d'observation glissante (Port Scan, tentatives répétées de
+    connexion, et les futures menaces volumétriques comme SYN/ICMP
+    Flood — voir `nombre_evenements_par_source`).
+    """
+    debut_fenetre = maintenant - timedelta(seconds=fenetre_secondes)
+    return [
+        evenement
+        for evenement in evenements
+        if evenement.ip_source == ip_source and debut_fenetre <= evenement.horodatage <= maintenant
+    ]
 
 
 def nombre_ports_distincts(
@@ -21,15 +44,41 @@ def nombre_ports_distincts(
     Indicateur utilisé par la règle Port Scan (docs/cahier_des_charges.md,
     section 7.1).
     """
-    debut_fenetre = maintenant - timedelta(seconds=fenetre_secondes)
     ports = {
         evenement.port
-        for evenement in evenements
-        if evenement.ip_source == ip_source
-        and evenement.port is not None
-        and debut_fenetre <= evenement.horodatage <= maintenant
+        for evenement in _evenements_dans_la_fenetre(
+            evenements, ip_source, fenetre_secondes, maintenant
+        )
+        if evenement.port is not None
     }
     return len(ports)
+
+
+def nombre_evenements_par_source(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    type_evenement: str,
+    fenetre_secondes: int,
+    maintenant: datetime,
+) -> int:
+    """Nombre d'événements d'un type donné (`type_evenement`) observés pour
+    `ip_source` sur la fenêtre des `fenetre_secondes` dernières secondes.
+
+    Indicateur générique de fréquence, utilisé par la règle Tentatives
+    répétées de connexion avec `type_evenement="connexion"`
+    (docs/cahier_des_charges.md, section 7.5). Sa généricité permet de
+    couvrir plus tard SYN Flood et ICMP Flood par simple paramétrage
+    d'une nouvelle règle (`type_evenement="syn"` / `"icmp"`), sans
+    modification de code (voir docs/preparation_implementation.md,
+    section 3.3 sur la généricité de l'entité Règle).
+    """
+    return sum(
+        1
+        for evenement in _evenements_dans_la_fenetre(
+            evenements, ip_source, fenetre_secondes, maintenant
+        )
+        if evenement.type_evenement == type_evenement
+    )
 
 
 def nombre_echecs_authentification_consecutifs(

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from app.analysis.indicators import (
     nombre_echecs_authentification_consecutifs,
+    nombre_evenements_par_source,
     nombre_ports_distincts,
 )
 from app.capture.events import EvenementReseau
@@ -87,3 +88,54 @@ def test_echecs_consecutifs_zero_si_derniere_tentative_reussie():
     resultat = nombre_echecs_authentification_consecutifs(evenements, "10.0.0.5")
 
     assert resultat == 0
+
+
+def test_nombre_evenements_par_source_compte_le_type_demande():
+    evenements = [
+        _evenement_connexion("192.168.1.30", port=443, secondes_avant=i) for i in range(25)
+    ]
+
+    resultat = nombre_evenements_par_source(
+        evenements,
+        "192.168.1.30",
+        type_evenement="connexion",
+        fenetre_secondes=60,
+        maintenant=MAINTENANT,
+    )
+
+    assert resultat == 25
+
+
+def test_nombre_evenements_par_source_ignore_les_autres_types():
+    evenements = [
+        _evenement_connexion("10.0.0.5", port=80, secondes_avant=1),
+        _evenement_auth("10.0.0.5", reussi=False, secondes_avant=2),
+    ]
+
+    resultat = nombre_evenements_par_source(
+        evenements,
+        "10.0.0.5",
+        type_evenement="connexion",
+        fenetre_secondes=60,
+        maintenant=MAINTENANT,
+    )
+
+    assert resultat == 1
+
+
+def test_nombre_evenements_par_source_ignore_hors_fenetre_et_autres_sources():
+    evenements = [
+        _evenement_connexion("192.168.1.30", port=443, secondes_avant=5),
+        _evenement_connexion("192.168.1.30", port=443, secondes_avant=500),  # hors fenêtre
+        _evenement_connexion("10.0.0.9", port=443, secondes_avant=5),  # autre source
+    ]
+
+    resultat = nombre_evenements_par_source(
+        evenements,
+        "192.168.1.30",
+        type_evenement="connexion",
+        fenetre_secondes=60,
+        maintenant=MAINTENANT,
+    )
+
+    assert resultat == 1

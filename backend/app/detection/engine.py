@@ -15,6 +15,7 @@ from datetime import datetime
 
 from app.analysis.indicators import (
     nombre_echecs_authentification_consecutifs,
+    nombre_evenements_par_source,
     nombre_ports_distincts,
 )
 from app.capture.events import EvenementReseau
@@ -73,10 +74,31 @@ def _calculer_appartenance_liste_noire(
     return 1 if ip_source in contexte.adresses_blacklistees else 0
 
 
+def _calculer_nombre_evenements(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    condition: dict,
+    maintenant: datetime,
+    contexte: ContexteDetection,
+) -> int:
+    return nombre_evenements_par_source(
+        evenements,
+        ip_source,
+        condition.get("type_evenement", "connexion"),
+        condition.get("fenetre_secondes", 60),
+        maintenant,
+    )
+
+
 CALCULATEURS_INDICATEURS: dict[str, CalculateurIndicateur] = {
     "ports_distincts_par_source": _calculer_ports_distincts,
     "echecs_consecutifs": _calculer_echecs_consecutifs,
     "adresse_dans_liste_noire": _calculer_appartenance_liste_noire,
+    # Indicateur générique : réutilisable tel quel pour SYN Flood et
+    # ICMP Flood en changeant seulement `type_evenement` dans la
+    # condition de la règle, sans nouveau code (voir
+    # app/analysis/indicators.py, docstring de nombre_evenements_par_source).
+    "nombre_evenements_par_source": _calculer_nombre_evenements,
 }
 
 

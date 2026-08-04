@@ -121,3 +121,47 @@ def test_scenario_ip_blacklistee_de_bout_en_bout(db_session):
     assert alerte_persistee.ip_source == "203.0.113.66"
     assert alerte_persistee.type_menace == "ip_blacklistee"
     assert alerte_persistee.gravite is Gravite.ELEVE
+
+
+def test_scenario_tentatives_repetees_connexion_de_bout_en_bout(db_session):
+    role = Role(nom="Administrateur")
+    auteur = Utilisateur(nom_utilisateur="admin", mot_de_passe_hash="x", role=role)
+    regle = Regle(
+        nom="Tentatives répétées de connexion",
+        type_menace="tentatives_repetees_connexion",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_evenements_par_source",
+                "type_evenement": "connexion",
+                "seuil": 20,
+                "fenetre_secondes": 60,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    # 25 connexions vers le même port en une minute : reconnaissance
+    # active ou tentative d'exploitation automatisée.
+    evenements = [
+        EvenementReseau(
+            ip_source="198.51.100.44",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(25)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+    alertes = creer_alertes(db_session, detections)
+
+    assert len(alertes) == 1
+    alerte_persistee = db_session.query(Alerte).one()
+    assert alerte_persistee.ip_source == "198.51.100.44"
+    assert alerte_persistee.type_menace == "tentatives_repetees_connexion"
+    assert alerte_persistee.gravite is Gravite.MOYEN
+    assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE
