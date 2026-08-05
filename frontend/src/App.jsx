@@ -1,16 +1,29 @@
-import { useState } from "react";
-import AlertsPage from "./features/alerts/AlertsPage.jsx";
-import LoginPage from "./features/auth/LoginPage.jsx";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import AppLayout from "./components/layout/AppLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { AuthProvider } from "./context/AuthContext";
+import DashboardPage from "./pages/DashboardPage";
+import LoginPage from "./pages/LoginPage";
 
-// Deux écrans seulement : un routeur dédié serait prématuré (voir
-// react-router-dom, déjà déclaré en dépendance pour les phases suivantes).
+// Nouvelle page = nouvelle <Route> sous <AppLayout> ci-dessous, plus un lien
+// dans components/layout/Sidebar.jsx. Alertes/Utilisateurs/Règles/Logs/
+// Configuration/Statistiques ne sont volontairement pas encore raccordées
+// (hors périmètre de cette étape).
 function App() {
-  const [jeton, setJeton] = useState(null);
-
-  if (!jeton) {
-    return <LoginPage onConnecte={setJeton} />;
-  }
-  return <AlertsPage jeton={jeton} onDeconnexion={() => setJeton(null)} />;
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/connexion" element={<LoginPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<DashboardPage />} />
+            </Route>
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
 }
 
 export default App;
