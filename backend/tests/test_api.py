@@ -420,3 +420,158 @@ def test_scenario_trafic_anormal_simple_visible_via_api(client, db_session):
     assert alertes[0]["ip_source"] == "192.168.1.70"
     assert alertes[0]["type_menace"] == "trafic_anormal_simple"
     assert alertes[0]["gravite"] == "moyen"
+
+
+# --- Ressource Utilisateurs (docs/cahier_des_charges.md, UC6) --------------
+
+
+def test_lister_utilisateurs_refuse_sans_authentification(client):
+    reponse = client.get("/v1/utilisateurs")
+
+    assert reponse.status_code == 401
+
+
+def test_lister_utilisateurs_refuse_a_lanalyste(client, db_session):
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.get("/v1/utilisateurs", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 403
+
+
+def test_lister_utilisateurs_accessible_a_ladministrateur(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/utilisateurs", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    noms = {u["nom_utilisateur"] for u in reponse.json()}
+    assert noms == {"admin"}
+
+
+def test_creer_utilisateur_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    role_analyste = Role(nom="Analyste sécurité")
+    db_session.add(role_analyste)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.post(
+        "/v1/utilisateurs",
+        json={
+            "nom_utilisateur": "nouvel_analyste",
+            "mot_de_passe": "Passw0rd!",
+            "role_id": role_analyste.id,
+        },
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 201
+    corps = reponse.json()
+    assert corps["nom_utilisateur"] == "nouvel_analyste"
+    assert corps["role"] == "Analyste sécurité"
+    assert corps["statut_compte"] == "actif"
+    assert "mot_de_passe" not in corps
+    assert "mot_de_passe_hash" not in corps
+
+
+def test_creer_utilisateur_refuse_nom_deja_utilise(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.post(
+        "/v1/utilisateurs",
+        json={"nom_utilisateur": "admin", "mot_de_passe": "Autre1234!", "role_id": 1},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 409
+
+
+def test_creer_utilisateur_refuse_role_inexistant(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.post(
+        "/v1/utilisateurs",
+        json={"nom_utilisateur": "nouveau", "mot_de_passe": "Passw0rd!", "role_id": 999},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 422
+
+
+def test_creer_utilisateur_refuse_a_lanalyste(client, db_session):
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.post(
+        "/v1/utilisateurs",
+        json={"nom_utilisateur": "intrus", "mot_de_passe": "Passw0rd!", "role_id": 1},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_consulter_utilisateur_via_api(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        f"/v1/utilisateurs/{admin.id}", headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["id"] == admin.id
+
+
+def test_consulter_utilisateur_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/utilisateurs/999", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 404
+
+
+def test_modifier_utilisateur_change_de_role_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    cible = _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+    role_analyste = Role(nom="Analyste sécurité")
+    db_session.add(role_analyste)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.put(
+        f"/v1/utilisateurs/{cible.id}",
+        json={"role_id": role_analyste.id},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["role"] == "Analyste sécurité"
+
+
+def test_changer_statut_utilisateur_desactive_empeche_la_connexion(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    cible = _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.patch(
+        f"/v1/utilisateurs/{cible.id}/statut",
+        json={"statut_compte": "desactive"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["statut_compte"] == "desactive"
+
+    # Vérification croisée avec l'Authentification déjà existante : un
+    # compte désactivé ne peut plus se connecter.
+    reponse_login = client.post(
+        "/v1/auth/login", data={"username": "analyste", "password": "Passw0rd!"}
+    )
+    assert reponse_login.status_code == 401
