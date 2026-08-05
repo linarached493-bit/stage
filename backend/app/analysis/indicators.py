@@ -83,6 +83,27 @@ def nombre_evenements_par_source(
     )
 
 
+def nombre_total_evenements_par_source(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    fenetre_secondes: int,
+    maintenant: datetime,
+) -> int:
+    """Nombre total d'événements de `ip_source`, tous types confondus, sur
+    la fenêtre des `fenetre_secondes` dernières secondes avant `maintenant`.
+
+    Indicateur utilisé par la règle Trafic anormal simple
+    (docs/cahier_des_charges.md, section 7.9 / synthèse 7.10). Volume brut
+    uniquement : contrairement à `nombre_evenements_par_source` (qui ne
+    compte qu'un seul `type_evenement`) et à `nombre_types_evenements_distincts`
+    (qui mesure la diversité des types, pour Activité réseau inhabituelle),
+    cet indicateur ignore complètement le type et le port des événements.
+    Réutilise le même filtre de fenêtre glissante que les autres
+    indicateurs (`_evenements_dans_la_fenetre`).
+    """
+    return len(_evenements_dans_la_fenetre(evenements, ip_source, fenetre_secondes, maintenant))
+
+
 def nombre_types_evenements_distincts(
     evenements: list[EvenementReseau],
     ip_source: str,

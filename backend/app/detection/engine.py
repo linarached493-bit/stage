@@ -18,6 +18,7 @@ from app.analysis.indicators import (
     nombre_evenements_avec_port_interdit,
     nombre_evenements_par_source,
     nombre_ports_distincts,
+    nombre_total_evenements_par_source,
     nombre_types_evenements_distincts,
 )
 from app.capture.events import EvenementReseau
@@ -102,6 +103,18 @@ def _calculer_types_evenements_distincts(
     )
 
 
+def _calculer_volume_total(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    condition: dict,
+    maintenant: datetime,
+    contexte: ContexteDetection,
+) -> int:
+    return nombre_total_evenements_par_source(
+        evenements, ip_source, condition.get("fenetre_secondes", 60), maintenant
+    )
+
+
 def _calculer_nombre_evenements(
     evenements: list[EvenementReseau],
     ip_source: str,
@@ -133,6 +146,10 @@ CALCULATEURS_INDICATEURS: dict[str, CalculateurIndicateur] = {
     # Même fenêtre glissante que "ports_distincts_par_source", appliquée
     # à la diversité des types d'événements plutôt qu'aux ports.
     "types_evenements_distincts_par_source": _calculer_types_evenements_distincts,
+    # Même fenêtre glissante, mais volume brut sans distinction de type :
+    # complémentaire de "types_evenements_distincts_par_source" (diversité)
+    # et de "nombre_evenements_par_source" (fréquence d'UN type précis).
+    "nombre_total_evenements_par_source": _calculer_volume_total,
 }
 
 

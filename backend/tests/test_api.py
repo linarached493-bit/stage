@@ -377,3 +377,46 @@ def test_scenario_activite_inhabituelle_visible_via_api(client, db_session):
     assert alertes[0]["ip_source"] == "192.168.1.60"
     assert alertes[0]["type_menace"] == "activite_inhabituelle"
     assert alertes[0]["gravite"] == "moyen"
+
+
+def test_scenario_trafic_anormal_simple_visible_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Trafic anormal simple",
+        type_menace="trafic_anormal_simple",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_total_evenements_par_source",
+                "seuil": 25,
+                "fenetre_secondes": 30,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    maintenant = datetime.now()
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.70",
+            type_evenement="connexion",
+            horodatage=maintenant - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(30)
+    ]
+    detections = MoteurDetection([regle]).evaluer(evenements, maintenant)
+    creer_alertes(db_session, detections)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/alertes", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    alertes = reponse.json()
+    assert len(alertes) == 1
+    assert alertes[0]["ip_source"] == "192.168.1.70"
+    assert alertes[0]["type_menace"] == "trafic_anormal_simple"
+    assert alertes[0]["gravite"] == "moyen"

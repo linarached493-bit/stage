@@ -343,3 +343,46 @@ def test_scenario_activite_inhabituelle_de_bout_en_bout(db_session):
     assert alerte_persistee.type_menace == "activite_inhabituelle"
     assert alerte_persistee.gravite is Gravite.MOYEN
     assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE
+
+
+def test_scenario_trafic_anormal_simple_de_bout_en_bout(db_session):
+    role = Role(nom="Administrateur")
+    auteur = Utilisateur(nom_utilisateur="admin", mot_de_passe_hash="x", role=role)
+    regle = Regle(
+        nom="Trafic anormal simple",
+        type_menace="trafic_anormal_simple",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_total_evenements_par_source",
+                "seuil": 25,
+                "fenetre_secondes": 30,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    # 30 connexions vers un même port en 30 secondes : le volume brut,
+    # indépendamment du type ou du port, dépasse le seuil.
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.70",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(30)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+    alertes = creer_alertes(db_session, detections)
+
+    assert len(alertes) == 1
+    alerte_persistee = db_session.query(Alerte).one()
+    assert alerte_persistee.ip_source == "192.168.1.70"
+    assert alerte_persistee.type_menace == "trafic_anormal_simple"
+    assert alerte_persistee.gravite is Gravite.MOYEN
+    assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE

@@ -118,6 +118,22 @@ def _regle_activite_inhabituelle(seuil: int = 3) -> Regle:
     )
 
 
+def _regle_trafic_anormal_simple(seuil: int = 25) -> Regle:
+    return Regle(
+        nom="Trafic anormal simple",
+        type_menace="trafic_anormal_simple",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "nombre_total_evenements_par_source",
+                "seuil": seuil,
+                "fenetre_secondes": 30,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+    )
+
+
 def test_moteur_detecte_un_port_scan_simule():
     regle = _regle_port_scan(seuil=15)
     evenements = [
@@ -553,6 +569,80 @@ def test_activite_inhabituelle_independante_des_autres_menaces():
         ("activite_inhabituelle", "192.168.1.60"),
         ("syn_flood", "198.51.100.7"),
     }
+
+
+def test_moteur_detecte_un_trafic_anormal_simule():
+    regle = _regle_trafic_anormal_simple(seuil=25)
+    # 30 evenements du meme type : le volume seul depasse le seuil.
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.70",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(30)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert len(detections) == 1
+    assert detections[0].ip_source == "192.168.1.70"
+    assert detections[0].regle.type_menace == "trafic_anormal_simple"
+
+
+def test_moteur_ne_declenche_rien_sur_trafic_normal_leger():
+    regle = _regle_trafic_anormal_simple(seuil=25)
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.70",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(10)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
+
+
+def test_trafic_anormal_simple_distinct_des_huit_autres_menaces():
+    """Un volume total eleve mais reparti entre deux types, chacun sous
+    son propre seuil individuel, ne doit declencher QUE Trafic anormal
+    simple : ni Tentatives repetees de connexion (connexion < 20), ni
+    ICMP Flood (icmp < 150), ni Activite reseau inhabituelle (2 types
+    distincts < 3)."""
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.80",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(15)
+    ] + [
+        EvenementReseau(
+            ip_source="192.168.1.80",
+            type_evenement="icmp",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+        )
+        for i in range(15)
+    ]
+
+    detections = MoteurDetection(
+        [
+            _regle_trafic_anormal_simple(seuil=25),
+            _regle_tentatives_repetees_connexion(seuil=20),
+            _regle_icmp_flood(seuil=150),
+            _regle_activite_inhabituelle(seuil=3),
+        ]
+    ).evaluer(evenements, MAINTENANT)
+
+    assert len(detections) == 1
+    assert detections[0].regle.type_menace == "trafic_anormal_simple"
+    assert detections[0].ip_source == "192.168.1.80"
 
 
 def test_moteur_evalue_plusieurs_regles_et_sources_independamment():

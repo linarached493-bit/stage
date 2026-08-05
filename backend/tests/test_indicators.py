@@ -5,6 +5,7 @@ from app.analysis.indicators import (
     nombre_evenements_avec_port_interdit,
     nombre_evenements_par_source,
     nombre_ports_distincts,
+    nombre_total_evenements_par_source,
     nombre_types_evenements_distincts,
 )
 from app.capture.events import EvenementReseau
@@ -281,3 +282,48 @@ def test_nombre_types_evenements_distincts_ignore_hors_fenetre_et_autres_sources
     )
 
     assert resultat == 1
+
+
+def test_nombre_total_evenements_par_source_compte_tous_les_types():
+    """Contrairement a nombre_evenements_par_source, aucun filtre sur le
+    type : connexion, echec d authentification et syn comptent tous."""
+    evenements = [
+        _evenement_connexion("192.168.1.70", port=443, secondes_avant=1),
+        _evenement_connexion("192.168.1.70", port=443, secondes_avant=2),
+        _evenement_auth("192.168.1.70", reussi=False, secondes_avant=3),
+        EvenementReseau(
+            ip_source="192.168.1.70",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(seconds=4),
+            port=22,
+        ),
+    ]
+
+    resultat = nombre_total_evenements_par_source(
+        evenements, "192.168.1.70", fenetre_secondes=30, maintenant=MAINTENANT
+    )
+
+    assert resultat == 4
+
+
+def test_nombre_total_evenements_par_source_ignore_hors_fenetre_et_autres_sources():
+    evenements = [
+        _evenement_connexion("192.168.1.70", port=443, secondes_avant=1),
+        _evenement_connexion("192.168.1.70", port=443, secondes_avant=500),  # hors fenêtre
+        _evenement_connexion("10.0.0.9", port=443, secondes_avant=1),  # autre source
+    ]
+
+    resultat = nombre_total_evenements_par_source(
+        evenements, "192.168.1.70", fenetre_secondes=30, maintenant=MAINTENANT
+    )
+
+    assert resultat == 1
+
+
+def test_nombre_total_evenements_par_source_zero_si_aucun_evenement():
+    assert (
+        nombre_total_evenements_par_source(
+            [], "192.168.1.70", fenetre_secondes=30, maintenant=MAINTENANT
+        )
+        == 0
+    )
