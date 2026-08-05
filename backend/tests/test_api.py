@@ -21,6 +21,7 @@ from app.database.enums import Gravite
 from app.database.session import get_db
 from app.detection.engine import MoteurDetection
 from app.detection.models import Regle, StatutRegle
+from app.eventlog.models import LogEvenement, NiveauLog
 from app.main import app
 
 
@@ -1088,3 +1089,178 @@ def test_historique_accumule_commentaire_puis_acquittement_puis_fermeture_via_ap
     assert [entree["statut"] for entree in historique] == ["nouvelle", "en_cours", "traitee"]
     assert historique[0]["commentaire"] == "Observation initiale"
     assert historique[2]["commentaire"] == "Confirmee et traitee"
+
+
+# --- Gestion des logs (docs/cahier_des_charges.md, UC4) ---------------------
+
+
+def _creer_log(db_session, **overrides) -> LogEvenement:
+    parametres = {
+        "type_evenement": "connexion",
+        "niveau": NiveauLog.INFO,
+        "ip_source": "192.168.1.10",
+    }
+    parametres.update(overrides)
+    log = LogEvenement(**parametres)
+    db_session.add(log)
+    db_session.commit()
+    return log
+
+
+def test_lister_logs_refuse_sans_authentification(client):
+    reponse = client.get("/v1/logs")
+
+    assert reponse.status_code == 401
+
+
+def test_lister_logs_refuse_a_lecture_seule(client, db_session):
+    _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+
+    jeton = _connecter(client, "lecteur")
+    reponse = client.get("/v1/logs", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 403
+
+
+def test_lister_logs_accessible_a_ladministrateur_et_a_lanalyste(client, db_session):
+    for nom_role, nom_utilisateur in [
+        ("Administrateur", "admin"),
+        ("Analyste sécurité", "analyste"),
+    ]:
+        _creer_utilisateur(db_session, nom_role, nom_utilisateur)
+        jeton = _connecter(client, nom_utilisateur)
+
+        reponse = client.get("/v1/logs", headers={"Authorization": f"Bearer {jeton}"})
+
+        assert reponse.status_code == 200, f"échec pour le profil {nom_role}"
+
+
+def test_lister_logs_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    _creer_log(db_session, ip_source="192.168.1.10")
+    _creer_log(db_session, ip_source="10.0.0.5")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/logs", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    assert len(reponse.json()) == 2
+
+
+def test_lister_logs_filtre_par_niveau_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    _creer_log(db_session, niveau=NiveauLog.INFO)
+    _creer_log(db_session, niveau=NiveauLog.ERREUR)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/logs", params={"niveau": "erreur"}, headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert len(corps) == 1
+    assert corps[0]["niveau"] == "erreur"
+
+
+def test_lister_logs_filtre_par_type_evenement_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    _creer_log(db_session, type_evenement="connexion")
+    _creer_log(db_session, type_evenement="echec_authentification")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/logs",
+        params={"type_evenement": "echec_authentification"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert len(corps) == 1
+    assert corps[0]["type_evenement"] == "echec_authentification"
+
+
+def test_lister_logs_filtre_par_periode_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    ancien = datetime(2020, 1, 1, 0, 0, 0)
+    recent = datetime.now()
+    _creer_log(db_session, horodatage=ancien)
+    _creer_log(db_session, horodatage=recent)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/logs",
+        params={"date_debut": (recent - timedelta(hours=1)).isoformat()},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    assert len(reponse.json()) == 1
+
+
+def test_rechercher_logs_par_adresse_ip_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    _creer_log(db_session, ip_source="192.168.1.10")
+    _creer_log(db_session, ip_source="10.0.0.5")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/logs",
+        params={"adresse_ip": "192.168.1.10"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert len(corps) == 1
+    assert corps[0]["ip_source"] == "192.168.1.10"
+
+
+def test_rechercher_logs_par_texte_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    _creer_log(db_session, type_evenement="connexion", protocole="TCP")
+    _creer_log(db_session, type_evenement="icmp", protocole="ICMP")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/logs", params={"recherche": "ICMP"}, headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert len(corps) == 1
+    assert corps[0]["type_evenement"] == "icmp"
+
+
+def test_consulter_log_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    log = _creer_log(db_session, protocole="TCP", ports="443")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(f"/v1/logs/{log.id}", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["id"] == log.id
+    assert corps["protocole"] == "TCP"
+    assert corps["ports"] == "443"
+
+
+def test_consulter_log_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.get("/v1/logs/999", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 404
+
+
+def test_consulter_log_refuse_a_lecture_seule(client, db_session):
+    log = _creer_log(db_session)
+    _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+
+    jeton = _connecter(client, "lecteur")
+    reponse = client.get(f"/v1/logs/{log.id}", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 403
