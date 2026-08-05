@@ -5,6 +5,7 @@ from app.analysis.indicators import (
     nombre_evenements_avec_port_interdit,
     nombre_evenements_par_source,
     nombre_ports_distincts,
+    nombre_types_evenements_distincts,
 )
 from app.capture.events import EvenementReseau
 
@@ -233,3 +234,50 @@ def test_nombre_evenements_avec_port_interdit_vide_si_ensemble_vide():
     )
 
     assert resultat == 0
+
+
+def test_nombre_types_evenements_distincts_compte_les_types_uniques():
+    evenements = [
+        _evenement_connexion("192.168.1.60", port=443, secondes_avant=1),
+        _evenement_auth("192.168.1.60", reussi=False, secondes_avant=2),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(seconds=3),
+            port=80,
+        ),
+    ]
+
+    resultat = nombre_types_evenements_distincts(
+        evenements, "192.168.1.60", fenetre_secondes=30, maintenant=MAINTENANT
+    )
+
+    assert resultat == 3
+
+
+def test_nombre_types_evenements_distincts_trafic_homogene_egal_un():
+    """Un trafic normal et volumineux, mais d'un seul type, ne doit pas
+    être compté comme divers : ce n'est pas un indicateur de volume."""
+    evenements = [
+        _evenement_connexion("192.168.1.60", port=443, secondes_avant=i) for i in range(50)
+    ]
+
+    resultat = nombre_types_evenements_distincts(
+        evenements, "192.168.1.60", fenetre_secondes=60, maintenant=MAINTENANT
+    )
+
+    assert resultat == 1
+
+
+def test_nombre_types_evenements_distincts_ignore_hors_fenetre_et_autres_sources():
+    evenements = [
+        _evenement_connexion("192.168.1.60", port=443, secondes_avant=1),
+        _evenement_auth("192.168.1.60", reussi=False, secondes_avant=500),  # hors fenêtre
+        _evenement_auth("10.0.0.9", reussi=False, secondes_avant=1),  # autre source
+    ]
+
+    resultat = nombre_types_evenements_distincts(
+        evenements, "192.168.1.60", fenetre_secondes=30, maintenant=MAINTENANT
+    )
+
+    assert resultat == 1

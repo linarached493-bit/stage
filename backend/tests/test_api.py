@@ -324,3 +324,56 @@ def test_scenario_ports_interdits_visible_via_api(client, db_session):
     assert alertes[0]["ip_source"] == "192.168.1.40"
     assert alertes[0]["type_menace"] == "ports_interdits"
     assert alertes[0]["gravite"] == "moyen"
+
+
+def test_scenario_activite_inhabituelle_visible_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Activité réseau inhabituelle",
+        type_menace="activite_inhabituelle",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "types_evenements_distincts_par_source",
+                "seuil": 3,
+                "fenetre_secondes": 30,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    maintenant = datetime.now()
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="connexion",
+            horodatage=maintenant - timedelta(seconds=1),
+            port=443,
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="echec_authentification",
+            horodatage=maintenant - timedelta(seconds=2),
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="syn",
+            horodatage=maintenant - timedelta(seconds=3),
+            port=22,
+        ),
+    ]
+    detections = MoteurDetection([regle]).evaluer(evenements, maintenant)
+    creer_alertes(db_session, detections)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/alertes", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    alertes = reponse.json()
+    assert len(alertes) == 1
+    assert alertes[0]["ip_source"] == "192.168.1.60"
+    assert alertes[0]["type_menace"] == "activite_inhabituelle"
+    assert alertes[0]["gravite"] == "moyen"

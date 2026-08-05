@@ -290,3 +290,56 @@ def test_scenario_ports_interdits_de_bout_en_bout(db_session):
     assert alerte_persistee.type_menace == "ports_interdits"
     assert alerte_persistee.gravite is Gravite.MOYEN
     assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE
+
+
+def test_scenario_activite_inhabituelle_de_bout_en_bout(db_session):
+    role = Role(nom="Administrateur")
+    auteur = Utilisateur(nom_utilisateur="admin", mot_de_passe_hash="x", role=role)
+    regle = Regle(
+        nom="Activité réseau inhabituelle",
+        type_menace="activite_inhabituelle",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "types_evenements_distincts_par_source",
+                "seuil": 3,
+                "fenetre_secondes": 30,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    # Une même source combine connexion, échec d'authentification et SYN
+    # en quelques secondes : combinaison atypique pour un hôte normal.
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=1),
+            port=443,
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="echec_authentification",
+            horodatage=MAINTENANT - timedelta(seconds=2),
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(seconds=3),
+            port=22,
+        ),
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+    alertes = creer_alertes(db_session, detections)
+
+    assert len(alertes) == 1
+    alerte_persistee = db_session.query(Alerte).one()
+    assert alerte_persistee.ip_source == "192.168.1.60"
+    assert alerte_persistee.type_menace == "activite_inhabituelle"
+    assert alerte_persistee.gravite is Gravite.MOYEN
+    assert alerte_persistee.statut_traitement is StatutAlerte.NOUVELLE

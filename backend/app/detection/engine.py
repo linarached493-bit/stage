@@ -18,6 +18,7 @@ from app.analysis.indicators import (
     nombre_evenements_avec_port_interdit,
     nombre_evenements_par_source,
     nombre_ports_distincts,
+    nombre_types_evenements_distincts,
 )
 from app.capture.events import EvenementReseau
 from app.detection.models import Regle, StatutRegle
@@ -89,6 +90,18 @@ def _calculer_port_interdit(
     return nombre_evenements_avec_port_interdit(evenements, ip_source, contexte.ports_interdits)
 
 
+def _calculer_types_evenements_distincts(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    condition: dict,
+    maintenant: datetime,
+    contexte: ContexteDetection,
+) -> int:
+    return nombre_types_evenements_distincts(
+        evenements, ip_source, condition.get("fenetre_secondes", 60), maintenant
+    )
+
+
 def _calculer_nombre_evenements(
     evenements: list[EvenementReseau],
     ip_source: str,
@@ -117,6 +130,9 @@ CALCULATEURS_INDICATEURS: dict[str, CalculateurIndicateur] = {
     # Même principe qu'"adresse_dans_liste_noire", appliqué au port :
     # appartenance à un ensemble configurable porté par le Contexte.
     "port_interdit_utilise": _calculer_port_interdit,
+    # Même fenêtre glissante que "ports_distincts_par_source", appliquée
+    # à la diversité des types d'événements plutôt qu'aux ports.
+    "types_evenements_distincts_par_source": _calculer_types_evenements_distincts,
 }
 
 

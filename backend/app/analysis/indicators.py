@@ -83,6 +83,37 @@ def nombre_evenements_par_source(
     )
 
 
+def nombre_types_evenements_distincts(
+    evenements: list[EvenementReseau],
+    ip_source: str,
+    fenetre_secondes: int,
+    maintenant: datetime,
+) -> int:
+    """Nombre de types d'événements distincts (connexion, échec
+    d'authentification, syn, icmp, ...) observés pour `ip_source` sur la
+    fenêtre des `fenetre_secondes` dernières secondes avant `maintenant`.
+
+    Indicateur utilisé par la règle Activité réseau inhabituelle
+    (docs/cahier_des_charges.md, section 7.7). Définition volontairement
+    simple, sans apprentissage automatique ni profil statistique appris :
+    un trafic normal provenant d'une même source est en général homogène
+    (un client web se limite presque toujours à des connexions, par
+    exemple) ; une source qui mélange en peu de temps un nombre inhabituel
+    de types d'événements différents s'écarte de cet usage typique et
+    constitue un signal simple de reconnaissance ou d'activité
+    multi-vecteurs. Réutilise le même filtre de fenêtre glissante que
+    `nombre_ports_distincts`, en comptant les types d'événements distincts
+    au lieu des ports distincts.
+    """
+    types = {
+        evenement.type_evenement
+        for evenement in _evenements_dans_la_fenetre(
+            evenements, ip_source, fenetre_secondes, maintenant
+        )
+    }
+    return len(types)
+
+
 def nombre_evenements_avec_port_interdit(
     evenements: list[EvenementReseau],
     ip_source: str,

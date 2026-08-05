@@ -102,6 +102,22 @@ def _regle_ports_interdits() -> Regle:
     )
 
 
+def _regle_activite_inhabituelle(seuil: int = 3) -> Regle:
+    return Regle(
+        nom="Activité réseau inhabituelle",
+        type_menace="activite_inhabituelle",
+        condition_declenchement=json.dumps(
+            {
+                "indicateur": "types_evenements_distincts_par_source",
+                "seuil": seuil,
+                "fenetre_secondes": 30,
+            }
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+    )
+
+
 def test_moteur_detecte_un_port_scan_simule():
     regle = _regle_port_scan(seuil=15)
     evenements = [
@@ -441,6 +457,101 @@ def test_ports_interdits_independant_des_autres_menaces():
     assert resultats == {
         ("ports_interdits", "192.168.1.40"),
         ("port_scan", "192.168.1.99"),
+    }
+
+
+def test_moteur_detecte_une_activite_reseau_inhabituelle():
+    regle = _regle_activite_inhabituelle(seuil=3)
+    # Une même source mélange connexion, échec d'authentification et SYN
+    # en quelques secondes : combinaison atypique pour un hôte normal.
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=1),
+            port=443,
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="echec_authentification",
+            horodatage=MAINTENANT - timedelta(seconds=2),
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(seconds=3),
+            port=22,
+        ),
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert len(detections) == 1
+    assert detections[0].ip_source == "192.168.1.60"
+    assert detections[0].regle.type_menace == "activite_inhabituelle"
+
+
+def test_moteur_ne_declenche_rien_sur_trafic_homogene_meme_volumineux():
+    """Absence de faux positif : un trafic important mais d'un seul type
+    (comportement normal d'un client) ne doit pas déclencher la règle,
+    même si le volume est élevé."""
+    regle = _regle_activite_inhabituelle(seuil=3)
+    evenements = [
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=i),
+            port=443,
+        )
+        for i in range(50)
+    ]
+
+    detections = MoteurDetection([regle]).evaluer(evenements, MAINTENANT)
+
+    assert detections == []
+
+
+def test_activite_inhabituelle_independante_des_autres_menaces():
+    """Un mélange de types d'événements sur une source ne doit pas, à lui
+    seul, déclencher les règles volumétriques (SYN Flood ici), et
+    inversement."""
+    evenements_inhabituels = [
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="connexion",
+            horodatage=MAINTENANT - timedelta(seconds=1),
+            port=443,
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="echec_authentification",
+            horodatage=MAINTENANT - timedelta(seconds=2),
+        ),
+        EvenementReseau(
+            ip_source="192.168.1.60",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(seconds=3),
+            port=22,
+        ),
+    ]
+    evenements_syn_flood = [
+        EvenementReseau(
+            ip_source="198.51.100.7",
+            type_evenement="syn",
+            horodatage=MAINTENANT - timedelta(milliseconds=i * 10),
+            port=80,
+        )
+        for i in range(150)
+    ]
+
+    detections = MoteurDetection(
+        [_regle_activite_inhabituelle(seuil=3), _regle_syn_flood(seuil=100)]
+    ).evaluer(evenements_inhabituels + evenements_syn_flood, MAINTENANT)
+
+    resultats = {(d.regle.type_menace, d.ip_source) for d in detections}
+    assert resultats == {
+        ("activite_inhabituelle", "192.168.1.60"),
+        ("syn_flood", "198.51.100.7"),
     }
 
 
