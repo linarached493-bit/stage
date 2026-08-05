@@ -1,11 +1,10 @@
 """Point d'entrée de l'application backend.
 
-Expose une partie du catalogue d'endpoints défini dans
+Expose l'intégralité du catalogue d'endpoints défini dans
 docs/conception_api_rest.md : Authentification (login, session),
 Utilisateurs (gestion complète), Alertes (consultation et traitement),
-Règles (gestion complète), Logs (consultation) et Configuration / Liste
-noire (gestion complète). Seule la ressource Statistiques reste à faire
-— voir docs/plan_de_developpement.md, Phase 7.
+Règles (gestion complète), Logs (consultation), Configuration / Liste
+noire (gestion complète) et Statistiques (consultation).
 """
 
 from fastapi import FastAPI
@@ -18,6 +17,7 @@ from app.configuration.router import configuration_router, liste_noire_router
 from app.core.config import get_settings
 from app.detection.router import router as regles_router
 from app.eventlog.router import router as logs_router
+from app.statistics.router import router as statistiques_router
 
 settings = get_settings()
 
@@ -41,3 +41,4 @@ app.include_router(regles_router)
 app.include_router(logs_router)
 app.include_router(configuration_router)
 app.include_router(liste_noire_router)
+app.include_router(statistiques_router)

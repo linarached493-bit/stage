@@ -1561,3 +1561,88 @@ def test_scenario_ip_blacklistee_prise_en_compte_immediate_via_api(client, db_se
     ).evaluer(evenements, datetime.now())
 
     assert len(detections) == 1
+
+
+# --- Statistiques (docs/cahier_des_charges.md, UC5) -------------------------
+
+
+def test_consulter_statistiques_refuse_sans_authentification(client):
+    reponse = client.get("/v1/statistiques")
+
+    assert reponse.status_code == 401
+
+
+def test_consulter_statistiques_refuse_a_lecture_seule(client, db_session):
+    """Écart assumé par rapport à la matrice de permissions du cahier des
+    charges (qui accordait cet accès à Lecture seule) : voir
+    app/statistics/router.py."""
+    _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+
+    jeton = _connecter(client, "lecteur")
+    reponse = client.get("/v1/statistiques", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 403
+
+
+def test_consulter_statistiques_accessible_a_ladministrateur_et_a_lanalyste(client, db_session):
+    for nom_role, nom_utilisateur in [
+        ("Administrateur", "admin"),
+        ("Analyste sécurité", "analyste"),
+    ]:
+        _creer_utilisateur(db_session, nom_role, nom_utilisateur)
+        jeton = _connecter(client, nom_utilisateur)
+
+        reponse = client.get("/v1/statistiques", headers={"Authorization": f"Bearer {jeton}"})
+
+        assert reponse.status_code == 200, f"échec pour le profil {nom_role}"
+
+
+def test_consulter_statistiques_sur_base_vide_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/statistiques", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["nombre_total_alertes"] == 0
+    assert corps["alertes_par_gravite"] == {}
+    assert corps["regles_actives"] == 0
+    assert corps["adresses_liste_noire"] == 0
+    assert corps["nombre_total_logs"] == 0
+    # Le compte administrateur créé pour le test apparaît lui-même.
+    assert corps["utilisateurs_par_role"] == {"Administrateur": 1}
+
+
+def test_consulter_statistiques_avec_donnees_via_api(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Port Scan",
+        type_menace="port_scan",
+        condition_declenchement=json.dumps(
+            {"indicateur": "ports_distincts_par_source", "seuil": 15, "fenetre_secondes": 60}
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=admin,
+    )
+    db_session.add(regle)
+    db_session.add(
+        Alerte(regle=regle, type_menace="port_scan", ip_source="10.0.0.1", gravite=Gravite.MOYEN)
+    )
+    db_session.add(AdresseListeNoire(adresse_ip="203.0.113.66"))
+    db_session.add(LogEvenement(type_evenement="connexion", ip_source="10.0.0.1"))
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/statistiques", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["nombre_total_alertes"] == 1
+    assert corps["alertes_par_gravite"] == {"moyen": 1}
+    assert corps["alertes_par_type_menace"] == {"port_scan": 1}
+    assert corps["regles_actives"] == 1
+    assert corps["regles_inactives"] == 0
+    assert corps["adresses_liste_noire"] == 1
+    assert corps["nombre_total_logs"] == 1
