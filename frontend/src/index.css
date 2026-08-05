@@ -64,3 +64,78 @@ body {
 .app-layout__contenu main {
   padding: 1rem;
 }
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.85em;
+  border: 1px solid currentcolor;
+}
+
+.badge--info {
+  color: light-dark(#0a58ca, #7ab0ff);
+}
+
+.badge--avertissement {
+  color: light-dark(#a15c00, #ffb648);
+}
+
+.badge--danger {
+  color: light-dark(#b02a37, #ff8790);
+}
+
+.badge--succes {
+  color: light-dark(#146c43, #6fd99a);
+}
+
+.badge--neutre {
+  color: light-dark(#495057, #adb5bd);
+}
+
+.alertes-filtres {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.alertes-filtres > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.alerte-detail {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid light-dark(#ddd, #333);
+  border-radius: 0.5rem;
+}
+
+.alerte-detail header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.alerte-detail dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+
+.alerte-detail dt {
+  font-weight: 600;
+}
+
+.alerte-detail dd {
+  margin: 0;
+}
+
+.alerte-detail form {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 30rem;
+}
