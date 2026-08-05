@@ -15,8 +15,8 @@ from app.alerts.service import creer_alertes
 from app.auth.models import Role, StatutCompte, Utilisateur
 from app.auth.security import hash_password
 from app.capture.events import EvenementReseau
-from app.configuration.models import ParametreConfiguration
-from app.configuration.service import ports_interdits_actifs
+from app.configuration.models import AdresseListeNoire, ParametreConfiguration
+from app.configuration.service import adresses_blacklistees_actives, ports_interdits_actifs
 from app.database.enums import Gravite
 from app.database.session import get_db
 from app.detection.engine import MoteurDetection
@@ -1264,3 +1264,300 @@ def test_consulter_log_refuse_a_lecture_seule(client, db_session):
     reponse = client.get(f"/v1/logs/{log.id}", headers={"Authorization": f"Bearer {jeton}"})
 
     assert reponse.status_code == 403
+
+
+# --- Gestion de la configuration et de la liste noire -----------------------
+# (docs/cahier_des_charges.md, section 6)
+
+
+def test_lister_configuration_refuse_sans_authentification(client):
+    reponse = client.get("/v1/configuration")
+
+    assert reponse.status_code == 401
+
+
+def test_lister_configuration_refuse_a_lecture_seule(client, db_session):
+    _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+
+    jeton = _connecter(client, "lecteur")
+    reponse = client.get("/v1/configuration", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 403
+
+
+def test_lister_configuration_accessible_a_lanalyste(client, db_session):
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.get("/v1/configuration", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+
+
+def test_modifier_parametre_refusee_a_lanalyste(client, db_session):
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.put(
+        "/v1/configuration/interface_surveillee",
+        json={"valeur": "eth0"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_modifier_parametre_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.put(
+        "/v1/configuration/interface_surveillee",
+        json={"valeur": "eth0", "description": "Interface réseau surveillée"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["nom_parametre"] == "interface_surveillee"
+    assert corps["valeur"] == "eth0"
+
+
+def test_consulter_parametre_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    db_session.add(ParametreConfiguration(nom_parametre="fenetre_defaut", valeur="60"))
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/configuration/fenetre_defaut", headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["valeur"] == "60"
+
+
+def test_consulter_parametre_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.get(
+        "/v1/configuration/inexistant", headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 404
+
+
+def test_consulter_ports_interdits_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    db_session.add(
+        ParametreConfiguration(nom_parametre="ports_interdits", valeur=json.dumps([23, 3389]))
+    )
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/configuration/ports-interdits", headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 200
+    assert sorted(reponse.json()["ports"]) == [23, 3389]
+
+
+def test_modifier_ports_interdits_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.put(
+        "/v1/configuration/ports-interdits",
+        json={"ports": [23, 3389]},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    assert sorted(reponse.json()["ports"]) == [23, 3389]
+
+
+def test_modifier_ports_interdits_refuse_port_invalide(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.put(
+        "/v1/configuration/ports-interdits",
+        json={"ports": [70000]},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 422
+
+
+def test_modifier_ports_interdits_refusee_a_lanalyste(client, db_session):
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.put(
+        "/v1/configuration/ports-interdits",
+        json={"ports": [23]},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_lister_liste_noire_refuse_sans_authentification(client):
+    reponse = client.get("/v1/liste-noire")
+
+    assert reponse.status_code == 401
+
+
+def test_lister_liste_noire_refuse_a_lecture_seule(client, db_session):
+    _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+
+    jeton = _connecter(client, "lecteur")
+    reponse = client.get("/v1/liste-noire", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 403
+
+
+def test_ajouter_adresse_liste_noire_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.post(
+        "/v1/liste-noire",
+        json={"adresse_ip": "203.0.113.66", "motif_source": "Renseignement manuel"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 201
+    corps = reponse.json()
+    assert corps["adresse_ip"] == "203.0.113.66"
+    assert corps["statut"] == "active"
+
+
+def test_ajouter_adresse_liste_noire_refusee_a_lanalyste(client, db_session):
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.post(
+        "/v1/liste-noire",
+        json={"adresse_ip": "203.0.113.66"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_ajouter_adresse_liste_noire_refuse_doublon(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+    client.post(
+        "/v1/liste-noire",
+        json={"adresse_ip": "203.0.113.66"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    reponse = client.post(
+        "/v1/liste-noire",
+        json={"adresse_ip": "203.0.113.66"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 409
+
+
+def test_lister_liste_noire_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    db_session.add(AdresseListeNoire(adresse_ip="203.0.113.66"))
+    db_session.add(AdresseListeNoire(adresse_ip="198.51.100.10"))
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get("/v1/liste-noire", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    assert len(reponse.json()) == 2
+
+
+def test_retirer_adresse_liste_noire_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    entree = AdresseListeNoire(adresse_ip="203.0.113.66")
+    db_session.add(entree)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.patch(
+        f"/v1/liste-noire/{entree.id}/statut",
+        json={"statut": "inactive"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["statut"] == "inactive"
+
+
+def test_retirer_adresse_liste_noire_refuse_a_lanalyste(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin_temp")
+    entree = AdresseListeNoire(adresse_ip="203.0.113.66")
+    db_session.add(entree)
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+    db_session.commit()
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.patch(
+        f"/v1/liste-noire/{entree.id}/statut",
+        json={"statut": "inactive"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_retirer_adresse_liste_noire_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.patch(
+        "/v1/liste-noire/999/statut",
+        json={"statut": "inactive"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 404
+
+
+def test_scenario_ip_blacklistee_prise_en_compte_immediate_via_api(client, db_session):
+    """Ajout via l'API -> immédiatement visible par le moteur de
+    détection, sans redémarrage ni modification de code."""
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="IP blacklistée",
+        type_menace="ip_blacklistee",
+        condition_declenchement=json.dumps({"indicateur": "adresse_dans_liste_noire", "seuil": 1}),
+        gravite=Gravite.ELEVE,
+        statut=StatutRegle.ACTIVE,
+        auteur=admin,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    client.post(
+        "/v1/liste-noire",
+        json={"adresse_ip": "203.0.113.66"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    evenements = [
+        EvenementReseau(
+            ip_source="203.0.113.66",
+            type_evenement="connexion",
+            horodatage=datetime.now(),
+            port=443,
+        )
+    ]
+    detections = MoteurDetection(
+        [regle], adresses_blacklistees=adresses_blacklistees_actives(db_session)
+    ).evaluer(evenements, datetime.now())
+
+    assert len(detections) == 1
