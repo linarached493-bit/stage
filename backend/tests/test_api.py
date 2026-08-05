@@ -575,3 +575,252 @@ def test_changer_statut_utilisateur_desactive_empeche_la_connexion(client, db_se
         "/v1/auth/login", data={"username": "analyste", "password": "Passw0rd!"}
     )
     assert reponse_login.status_code == 401
+
+
+# --- Gestion des règles (docs/cahier_des_charges.md, UC3) -------------------
+
+_CONDITION_PORT_SCAN = {
+    "indicateur": "ports_distincts_par_source",
+    "seuil": 15,
+    "fenetre_secondes": 60,
+}
+
+
+def test_creer_regle_refuse_sans_authentification(client):
+    reponse = client.post(
+        "/v1/regles",
+        json={
+            "nom": "Port Scan",
+            "type_menace": "port_scan",
+            "condition_declenchement": _CONDITION_PORT_SCAN,
+            "gravite": "moyen",
+        },
+    )
+
+    assert reponse.status_code == 401
+
+
+def test_creer_regle_refusee_a_lanalyste(client, db_session):
+    """Restriction volontaire de cette étape : seul l'Administrateur peut
+    écrire sur les règles (voir app/detection/router.py)."""
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.post(
+        "/v1/regles",
+        json={
+            "nom": "Port Scan",
+            "type_menace": "port_scan",
+            "condition_declenchement": _CONDITION_PORT_SCAN,
+            "gravite": "moyen",
+        },
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_creer_regle_via_api(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+
+    jeton = _connecter(client, "admin")
+    reponse = client.post(
+        "/v1/regles",
+        json={
+            "nom": "Port Scan",
+            "description": "Balayage de ports",
+            "type_menace": "port_scan",
+            "condition_declenchement": _CONDITION_PORT_SCAN,
+            "gravite": "moyen",
+        },
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 201
+    corps = reponse.json()
+    assert corps["nom"] == "Port Scan"
+    assert corps["statut"] == "active"
+    assert corps["condition_declenchement"] == _CONDITION_PORT_SCAN
+    assert corps["auteur"] == "admin"
+
+
+def test_creer_regle_refuse_nom_deja_utilise(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+    corps_regle = {
+        "nom": "Port Scan",
+        "type_menace": "port_scan",
+        "condition_declenchement": _CONDITION_PORT_SCAN,
+        "gravite": "moyen",
+    }
+    client.post("/v1/regles", json=corps_regle, headers={"Authorization": f"Bearer {jeton}"})
+
+    reponse = client.post(
+        "/v1/regles", json=corps_regle, headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 409
+
+
+def test_creer_regle_refuse_indicateur_inconnu(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.post(
+        "/v1/regles",
+        json={
+            "nom": "Règle bidon",
+            "type_menace": "inconnue",
+            "condition_declenchement": {"indicateur": "indicateur_inexistant", "seuil": 1},
+            "gravite": "moyen",
+        },
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 422
+
+
+def test_consulter_regle_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Port Scan",
+        type_menace="port_scan",
+        condition_declenchement=json.dumps(_CONDITION_PORT_SCAN),
+        gravite=Gravite.MOYEN,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(f"/v1/regles/{regle.id}", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    assert reponse.json()["id"] == regle.id
+    assert reponse.json()["condition_declenchement"] == _CONDITION_PORT_SCAN
+
+
+def test_consulter_regle_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.get("/v1/regles/999", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 404
+
+
+def test_modifier_regle_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Port Scan",
+        type_menace="port_scan",
+        condition_declenchement=json.dumps(_CONDITION_PORT_SCAN),
+        gravite=Gravite.MOYEN,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.put(
+        f"/v1/regles/{regle.id}",
+        json={"condition_declenchement": {**_CONDITION_PORT_SCAN, "seuil": 30}},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["condition_declenchement"]["seuil"] == 30
+
+
+def test_modifier_regle_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.put(
+        "/v1/regles/999",
+        json={"gravite": "eleve"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 404
+
+
+def test_modifier_regle_refuse_condition_invalide(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Port Scan",
+        type_menace="port_scan",
+        condition_declenchement=json.dumps(_CONDITION_PORT_SCAN),
+        gravite=Gravite.MOYEN,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.put(
+        f"/v1/regles/{regle.id}",
+        json={"condition_declenchement": {"indicateur": "indicateur_inexistant", "seuil": 1}},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 422
+
+
+def test_changer_statut_regle_via_api(client, db_session):
+    auteur = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = Regle(
+        nom="Port Scan",
+        type_menace="port_scan",
+        condition_declenchement=json.dumps(_CONDITION_PORT_SCAN),
+        gravite=Gravite.MOYEN,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+
+    jeton = _connecter(client, "admin")
+    reponse = client.patch(
+        f"/v1/regles/{regle.id}/statut",
+        json={"statut": "inactive"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    assert reponse.json()["statut"] == "inactive"
+
+
+def test_changer_statut_regle_refuse_a_lanalyste(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin_temp")
+    regle = Regle(
+        nom="Port Scan",
+        type_menace="port_scan",
+        condition_declenchement=json.dumps(_CONDITION_PORT_SCAN),
+        gravite=Gravite.MOYEN,
+        auteur=admin,
+    )
+    db_session.add(regle)
+    _creer_utilisateur(db_session, "Analyste sécurité", "analyste")
+    db_session.commit()
+
+    jeton = _connecter(client, "analyste")
+    reponse = client.patch(
+        f"/v1/regles/{regle.id}/statut",
+        json={"statut": "inactive"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_changer_statut_regle_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.patch(
+        "/v1/regles/999/statut",
+        json={"statut": "inactive"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 404
