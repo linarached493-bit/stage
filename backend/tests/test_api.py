@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from app.alerts.models import Alerte
 from app.alerts.service import creer_alertes
 from app.auth.models import Role, StatutCompte, Utilisateur
 from app.auth.security import hash_password
@@ -824,3 +825,266 @@ def test_changer_statut_regle_introuvable(client, db_session):
     )
 
     assert reponse.status_code == 404
+
+
+# --- Gestion des alertes (docs/cahier_des_charges.md, UC8) -----------------
+
+
+def _creer_regle_pour_alerte(db_session, auteur: Utilisateur) -> Regle:
+    regle = Regle(
+        nom="Port Scan",
+        type_menace="port_scan",
+        condition_declenchement=json.dumps(
+            {"indicateur": "ports_distincts_par_source", "seuil": 15, "fenetre_secondes": 60}
+        ),
+        gravite=Gravite.MOYEN,
+        statut=StatutRegle.ACTIVE,
+        auteur=auteur,
+    )
+    db_session.add(regle)
+    db_session.commit()
+    return regle
+
+
+def _creer_alerte(db_session, regle: Regle, **overrides) -> Alerte:
+    parametres = {
+        "regle": regle,
+        "type_menace": regle.type_menace,
+        "ip_source": "192.168.1.99",
+        "gravite": regle.gravite,
+    }
+    parametres.update(overrides)
+    alerte = Alerte(**parametres)
+    db_session.add(alerte)
+    db_session.commit()
+    return alerte
+
+
+def test_lister_alertes_filtre_par_gravite_via_api(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    _creer_alerte(db_session, regle, gravite=Gravite.MOYEN)
+    _creer_alerte(db_session, regle, gravite=Gravite.ELEVE)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(
+        "/v1/alertes", params={"gravite": "eleve"}, headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert len(corps) == 1
+    assert corps[0]["gravite"] == "eleve"
+
+
+def test_consulter_alerte_via_api(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.get(f"/v1/alertes/{alerte.id}", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["id"] == alerte.id
+    assert corps["regle"] == "Port Scan"
+    assert corps["historique"] == []
+
+
+def test_consulter_alerte_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.get("/v1/alertes/999", headers={"Authorization": f"Bearer {jeton}"})
+
+    assert reponse.status_code == 404
+
+
+def test_acquitter_alerte_refuse_sans_authentification(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+
+    reponse = client.patch(f"/v1/alertes/{alerte.id}/acquitter", json={})
+
+    assert reponse.status_code == 401
+
+
+def test_acquitter_alerte_refusee_a_lecture_seule(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+    _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+
+    jeton = _connecter(client, "lecteur")
+    reponse = client.patch(
+        f"/v1/alertes/{alerte.id}/acquitter", json={}, headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_acquitter_alerte_via_api(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.patch(
+        f"/v1/alertes/{alerte.id}/acquitter",
+        json={"commentaire": "Pris en charge"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["statut_traitement"] == "en_cours"
+    assert len(corps["historique"]) == 1
+    assert corps["historique"][0]["commentaire"] == "Pris en charge"
+    assert corps["historique"][0]["utilisateur"] == "admin"
+
+
+def test_acquitter_alerte_deja_en_cours_renvoie_conflit(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+    jeton = _connecter(client, "admin")
+    client.patch(
+        f"/v1/alertes/{alerte.id}/acquitter", json={}, headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    reponse = client.patch(
+        f"/v1/alertes/{alerte.id}/acquitter", json={}, headers={"Authorization": f"Bearer {jeton}"}
+    )
+
+    assert reponse.status_code == 409
+
+
+def test_fermer_alerte_via_api(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.patch(
+        f"/v1/alertes/{alerte.id}/fermer",
+        json={"statut_final": "faux_positif", "commentaire": "Trafic legitime"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert corps["statut_traitement"] == "faux_positif"
+    assert corps["historique"][-1]["commentaire"] == "Trafic legitime"
+
+
+def test_fermer_alerte_refuse_statut_final_invalide(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.patch(
+        f"/v1/alertes/{alerte.id}/fermer",
+        json={"statut_final": "en_cours"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 422
+
+
+def test_fermer_alerte_deja_fermee_renvoie_conflit(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+    jeton = _connecter(client, "admin")
+    client.patch(
+        f"/v1/alertes/{alerte.id}/fermer",
+        json={"statut_final": "traitee"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    reponse = client.patch(
+        f"/v1/alertes/{alerte.id}/fermer",
+        json={"statut_final": "traitee"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 409
+
+
+def test_fermer_alerte_introuvable(client, db_session):
+    _creer_utilisateur(db_session, "Administrateur", "admin")
+    jeton = _connecter(client, "admin")
+
+    reponse = client.patch(
+        "/v1/alertes/999/fermer",
+        json={"statut_final": "traitee"},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 404
+
+
+def test_commenter_alerte_via_api(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+
+    jeton = _connecter(client, "admin")
+    reponse = client.post(
+        f"/v1/alertes/{alerte.id}/commentaires",
+        json={"commentaire": "Analyse en cours, en attente de confirmation."},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 201
+    corps = reponse.json()
+    assert corps["statut_traitement"] == "nouvelle"
+    assert len(corps["historique"]) == 1
+    assert corps["historique"][0]["commentaire"] == "Analyse en cours, en attente de confirmation."
+
+
+def test_commenter_alerte_refuse_a_lecture_seule(client, db_session):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+    _creer_utilisateur(db_session, "Lecture seule", "lecteur")
+
+    jeton = _connecter(client, "lecteur")
+    reponse = client.post(
+        f"/v1/alertes/{alerte.id}/commentaires",
+        json={"commentaire": "Je ne devrais pas pouvoir faire ceci."},
+        headers={"Authorization": f"Bearer {jeton}"},
+    )
+
+    assert reponse.status_code == 403
+
+
+def test_historique_accumule_commentaire_puis_acquittement_puis_fermeture_via_api(
+    client, db_session
+):
+    admin = _creer_utilisateur(db_session, "Administrateur", "admin")
+    regle = _creer_regle_pour_alerte(db_session, admin)
+    alerte = _creer_alerte(db_session, regle)
+    jeton = _connecter(client, "admin")
+    entetes = {"Authorization": f"Bearer {jeton}"}
+
+    client.post(
+        f"/v1/alertes/{alerte.id}/commentaires",
+        json={"commentaire": "Observation initiale"},
+        headers=entetes,
+    )
+    client.patch(f"/v1/alertes/{alerte.id}/acquitter", json={}, headers=entetes)
+    reponse = client.patch(
+        f"/v1/alertes/{alerte.id}/fermer",
+        json={"statut_final": "traitee", "commentaire": "Confirmee et traitee"},
+        headers=entetes,
+    )
+
+    assert reponse.status_code == 200
+    historique = reponse.json()["historique"]
+    assert [entree["statut"] for entree in historique] == ["nouvelle", "en_cours", "traitee"]
+    assert historique[0]["commentaire"] == "Observation initiale"
+    assert historique[2]["commentaire"] == "Confirmee et traitee"

@@ -11,7 +11,7 @@ Entité Statistique : volontairement absente. La décision retenue
 demande plutôt qu'une persistance, donc aucune table dédiée.
 """
 
-from app.alerts.models import Alerte  # noqa: F401
+from app.alerts.models import Alerte, HistoriqueAlerte  # noqa: F401
 from app.auth.models import Role, Utilisateur  # noqa: F401
 from app.configuration.models import AdresseListeNoire, ParametreConfiguration  # noqa: F401
 from app.database.base import Base
@@ -21,6 +21,7 @@ from app.eventlog.models import LogEvenement  # noqa: F401
 __all__ = [
     "Base",
     "Alerte",
+    "HistoriqueAlerte",
     "Role",
     "Utilisateur",
     "AdresseListeNoire",
