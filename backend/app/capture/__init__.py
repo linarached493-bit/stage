@@ -1,8 +1,10 @@
 """Module Capture réseau (docs/architecture_logicielle.md, section 4.1).
 
-Mission : observer en continu le trafic circulant sur l'interface réseau
-surveillée et en extraire les informations pertinentes.
+Mission : observer le trafic circulant sur l'interface réseau
+surveillée et le transformer en événements structurés
+(`app.capture.events.EvenementReseau`) exploitables par le Moteur de
+détection, sans effectuer aucune détection elle-même.
 
-Phase 1 — Initialisation : paquet vide, aucune logique implémentée.
-Développement prévu en Phase 4 (voir docs/plan_de_developpement.md).
+Voir app/capture/sniffer.py pour la transformation Scapy -> événement
+(`paquet_vers_evenement`) et l'écoute en direct (`capturer`).
 """
