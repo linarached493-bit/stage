@@ -49,7 +49,7 @@ function AlerteDetail({
   }
 
   return (
-    <section className="alerte-detail" aria-label={`Détail de l'alerte ${alerte.id}`}>
+    <section className="detail-panel" aria-label={`Détail de l'alerte ${alerte.id}`}>
       <header>
         <h2>Alerte #{alerte.id}</h2>
         <button type="button" onClick={onFermerPanneau}>

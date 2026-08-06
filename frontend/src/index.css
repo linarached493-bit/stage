@@ -105,37 +105,43 @@ body {
   gap: 0.25rem;
 }
 
-.alerte-detail {
+.detail-panel {
   margin-top: 1.5rem;
   padding: 1rem;
   border: 1px solid light-dark(#ddd, #333);
   border-radius: 0.5rem;
 }
 
-.alerte-detail header {
+.detail-panel header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.alerte-detail dl {
+.detail-panel dl {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 0.25rem 1rem;
 }
 
-.alerte-detail dt {
+.detail-panel dt {
   font-weight: 600;
 }
 
-.alerte-detail dd {
+.detail-panel dd {
   margin: 0;
 }
 
-.alerte-detail form {
+.detail-panel form {
   margin-top: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   max-width: 30rem;
+}
+
+.detail-panel > div {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
 }

@@ -1,12 +1,14 @@
 import { NavLink } from "react-router-dom";
 
-// Seuls le Tableau de bord et les Alertes sont disponibles à ce stade. Les
-// autres pages (règles, utilisateurs, logs, configuration, statistiques)
-// seront ajoutées ici une par une, sans changement de structure, au fur et à
-// mesure des prochaines étapes du plan de développement.
+// Seuls le Tableau de bord, les Alertes et les Utilisateurs sont
+// disponibles à ce stade. Les autres pages (règles, logs, configuration,
+// statistiques) seront ajoutées ici une par une, sans changement de
+// structure, au fur et à mesure des prochaines étapes du plan de
+// développement.
 const LIENS = [
   { chemin: "/", libelle: "Tableau de bord" },
   { chemin: "/alertes", libelle: "Alertes" },
+  { chemin: "/utilisateurs", libelle: "Utilisateurs" },
 ];
 
 function Sidebar() {
