@@ -1,16 +1,15 @@
 import { NavLink } from "react-router-dom";
 
-// Seuls le Tableau de bord, les Alertes, les Utilisateurs, les Règles et
-// les Logs sont disponibles à ce stade. Les autres pages (configuration,
-// statistiques) seront ajoutées ici une par une, sans changement de
-// structure, au fur et à mesure des prochaines étapes du plan de
-// développement.
+// Seule la page Statistiques n'est pas encore disponible. Elle sera
+// ajoutée ici de la même manière, sans changement de structure, à la
+// prochaine étape du plan de développement.
 const LIENS = [
   { chemin: "/", libelle: "Tableau de bord" },
   { chemin: "/alertes", libelle: "Alertes" },
   { chemin: "/utilisateurs", libelle: "Utilisateurs" },
   { chemin: "/regles", libelle: "Règles" },
   { chemin: "/logs", libelle: "Logs" },
+  { chemin: "/configuration", libelle: "Configuration" },
 ];
 
 function Sidebar() {
