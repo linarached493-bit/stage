@@ -6,5 +6,6 @@
 - `alertsService.js` — `fetchAlertes()` (avec filtres gravité/statut), `fetchAlerteDetail()`, `acquitterAlerte()`, `fermerAlerte()`, `ajouterCommentaire()`.
 - `usersService.js` — `fetchUtilisateurs()`, `fetchUtilisateurDetail()`, `creerUtilisateur()`, `modifierUtilisateur()`, `changerStatutUtilisateur()`.
 - `rulesService.js` — `fetchRegles()`, `fetchRegleDetail()`, `creerRegle()`, `modifierRegle()`, `changerStatutRegle()`.
+- `logsService.js` — `fetchLogs()` (avec filtres niveau/type d'événement/adresse IP/période/recherche), `fetchLogDetail()`. Consultation uniquement, aucune fonction d'écriture.
 
-Point d'accès unique vers l'API Backend, conformément au principe retenu dans `docs/specifications_techniques.md` (section 7). À compléter au fur et à mesure de l'ajout des autres ressources (logs, statistiques, configuration, liste noire) : un service dédié par ressource, construit sur `httpClient.js`.
+Point d'accès unique vers l'API Backend, conformément au principe retenu dans `docs/specifications_techniques.md` (section 7). À compléter au fur et à mesure de l'ajout des autres ressources (statistiques, configuration, liste noire) : un service dédié par ressource, construit sur `httpClient.js`.

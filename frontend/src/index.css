@@ -93,13 +93,14 @@ body {
   color: light-dark(#495057, #adb5bd);
 }
 
-.alertes-filtres {
+.filtres {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-bottom: 1rem;
 }
 
-.alertes-filtres > div {
+.filtres > div {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;

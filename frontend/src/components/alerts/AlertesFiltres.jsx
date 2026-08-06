@@ -2,7 +2,7 @@ import { GRAVITES, STATUTS } from "./alertLabels";
 
 function AlertesFiltres({ gravite, statut, onChangerGravite, onChangerStatut }) {
   return (
-    <div className="alertes-filtres">
+    <div className="filtres">
       <div>
         <label htmlFor="filtre-gravite">Gravité</label>
         <select

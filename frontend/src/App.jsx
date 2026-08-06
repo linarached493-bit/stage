@@ -5,12 +5,13 @@ import { AuthProvider } from "./context/AuthContext";
 import AlertsPage from "./pages/AlertsPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
+import LogsPage from "./pages/LogsPage";
 import RulesPage from "./pages/RulesPage";
 import UsersPage from "./pages/UsersPage";
 
 // Nouvelle page = nouvelle <Route> sous <AppLayout> ci-dessous, plus un lien
-// dans components/layout/Sidebar.jsx. Logs/Configuration/Statistiques ne
-// sont volontairement pas encore raccordées (hors périmètre de cette étape).
+// dans components/layout/Sidebar.jsx. Configuration/Statistiques ne sont
+// volontairement pas encore raccordées (hors périmètre de cette étape).
 function App() {
   return (
     <AuthProvider>
@@ -23,6 +24,7 @@ function App() {
               <Route path="/alertes" element={<AlertsPage />} />
               <Route path="/utilisateurs" element={<UsersPage />} />
               <Route path="/regles" element={<RulesPage />} />
+              <Route path="/logs" element={<LogsPage />} />
             </Route>
           </Route>
         </Routes>
