@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     project_name: str = "IDS - Centre Cinématographique Marocain"
-    version: str = "0.1.0"
+    version: str = "1.0.0"
     app_env: str = "development"
 
     database_url: str = ""

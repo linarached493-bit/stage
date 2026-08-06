@@ -1,6 +1,6 @@
 # Client API
 
-**Implémenté (partiel)** :
+**Implémenté (complet)** :
 - `httpClient.js` — client HTTP bas niveau générique (URL de base, en-têtes JSON, gestion des erreurs) utilisé par tous les services de ressource.
 - `authService.js` — `seConnecter()` (POST /v1/auth/login) et `consulterSession()` (GET /v1/auth/session).
 - `alertsService.js` — `fetchAlertes()` (avec filtres gravité/statut), `fetchAlerteDetail()`, `acquitterAlerte()`, `fermerAlerte()`, `ajouterCommentaire()`.
