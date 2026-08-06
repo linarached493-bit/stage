@@ -146,3 +146,35 @@ body {
   display: flex;
   gap: 0.5rem;
 }
+
+.statistiques-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.indicateurs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.indicateur-carte {
+  min-width: 10rem;
+  padding: 1rem;
+  border: 1px solid light-dark(#ddd, #333);
+  border-radius: 0.5rem;
+  text-align: center;
+}
+
+.indicateur-carte__valeur {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.indicateur-carte__libelle {
+  margin: 0.25rem 0 0;
+  color: light-dark(#495057, #adb5bd);
+}

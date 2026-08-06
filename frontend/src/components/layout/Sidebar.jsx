@@ -1,8 +1,7 @@
 import { NavLink } from "react-router-dom";
 
-// Seule la page Statistiques n'est pas encore disponible. Elle sera
-// ajoutée ici de la même manière, sans changement de structure, à la
-// prochaine étape du plan de développement.
+// Toutes les pages prévues au plan de développement sont désormais
+// disponibles.
 const LIENS = [
   { chemin: "/", libelle: "Tableau de bord" },
   { chemin: "/alertes", libelle: "Alertes" },
@@ -10,6 +9,7 @@ const LIENS = [
   { chemin: "/regles", libelle: "Règles" },
   { chemin: "/logs", libelle: "Logs" },
   { chemin: "/configuration", libelle: "Configuration" },
+  { chemin: "/statistiques", libelle: "Statistiques" },
 ];
 
 function Sidebar() {

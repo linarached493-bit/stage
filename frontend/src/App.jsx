@@ -8,11 +8,12 @@ import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import LogsPage from "./pages/LogsPage";
 import RulesPage from "./pages/RulesPage";
+import StatisticsPage from "./pages/StatisticsPage";
 import UsersPage from "./pages/UsersPage";
 
-// Nouvelle page = nouvelle <Route> sous <AppLayout> ci-dessous, plus un lien
-// dans components/layout/Sidebar.jsx. Statistiques n'est volontairement pas
-// encore raccordée (hors périmètre de cette étape).
+// Toutes les pages prévues au plan de développement sont désormais
+// raccordées. Nouvelle page = nouvelle <Route> sous <AppLayout> ci-dessous,
+// plus un lien dans components/layout/Sidebar.jsx.
 function App() {
   return (
     <AuthProvider>
@@ -27,6 +28,7 @@ function App() {
               <Route path="/regles" element={<RulesPage />} />
               <Route path="/logs" element={<LogsPage />} />
               <Route path="/configuration" element={<ConfigurationPage />} />
+              <Route path="/statistiques" element={<StatisticsPage />} />
             </Route>
           </Route>
         </Routes>
